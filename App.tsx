@@ -1,0 +1,2113 @@
+
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { HashRouter, Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-router-dom';
+import { 
+  Play, Square, Plus, Clock, Users, FileText,
+  Settings, Home, Edit2, CheckCircle, X, Calculator, BellRing, Flame, Trophy, Activity, Printer, Calendar, Eye, Download, Check, AlertTriangle, Briefcase, Trash2, Maximize2, Palette, LayoutList, History, Coins, PictureInPicture2, GripVertical, ChevronLeft, ChevronRight, BarChart2, TrendingUp, DollarSign, PieChart as PieChartIcon, HelpCircle, BookOpen, Lightbulb, MousePointerClick, ArrowRight
+} from 'lucide-react';
+import { ResponsiveContainer, Cell, BarChart, Bar, XAxis, Tooltip as RechartsTooltip, PieChart, Pie, Legend } from 'recharts';
+
+import { AppState, Client, TimeEntry, MonthlyFixedFee } from './types';
+import { loadState, saveState } from './services/storage';
+import { exportToCSV } from './services/pdfGenerator';
+import { Card, Button, Input, Select, Badge } from './components/UIComponents';
+
+// --- Theme Style Wrapper ---
+const ThemeProvider: React.FC<{ color: string; children: React.ReactNode }> = ({ color, children }) => {
+  useEffect(() => {
+    const root = document.documentElement;
+    let solidColor = color;
+    let contrast = '#1e293b'; // Default Slate 800 (Dark text)
+
+    const darkColors = ['#1e293b', '#0f172a', '#334155', '#b91c1c', '#4338ca', '#15803d', '#0F2027'];
+    
+    if (darkColors.includes(color) || color.includes('gradient')) {
+      // Logic for contrasting text colors
+      if (color.includes('#FFD700') || color.includes('#fdbed6') || color.includes('#fc9f97') || color.includes('#e2e8f0')) {
+         contrast = '#1e293b';
+      } else {
+         contrast = '#ffffff';
+      }
+    }
+    
+    // Set CSS Variables
+    root.style.setProperty('--theme-color', solidColor); 
+    root.style.setProperty('--theme-bg-gradient', color);
+    root.style.setProperty('--theme-contrast-text', contrast);
+  }, [color]);
+  return <>{children}</>;
+};
+
+// --- Stylish Color Palette (Earthy & Muted Tones) ---
+const STYLISH_COLORS = [
+    '#4A6FA5', // Muted Blue
+    '#6B8E23', // Olive Drab
+    '#CD853F', // Peru
+    '#BC8F8F', // Rosy Brown
+    '#708090', // Slate Gray
+    '#5F9EA0', // Cadet Blue
+    '#A0522D', // Sienna
+    '#808000', // Olive
+    '#4682B4', // Steel Blue
+    '#D2691E', // Chocolate
+    '#9ACD32', // Yellow Green
+    '#778899', // Light Slate Gray
+    '#CD5C5C', // Indian Red
+    '#8FBC8F', // Dark Sea Green
+    '#DB7093', // Pale Violet Red
+];
+
+const getNextStylishColor = (existingColors: string[]) => {
+    const available = STYLISH_COLORS.filter(c => !existingColors.includes(c));
+    if (available.length > 0) return available[0];
+    return STYLISH_COLORS[Math.floor(Math.random() * STYLISH_COLORS.length)];
+};
+
+// --- Draggable Component ---
+const DraggableTimer: React.FC<{
+    activeClientName: string;
+    onStop: () => void;
+    elapsedTime: string;
+    onTogglePiP: () => void;
+    isPiPActive: boolean;
+}> = ({ activeClientName, onStop, elapsedTime, onTogglePiP, isPiPActive }) => {
+    const [position, setPosition] = useState({ x: window.innerWidth - 340, y: window.innerHeight - 100 });
+    const [isDragging, setIsDragging] = useState(false);
+    const offset = useRef({ x: 0, y: 0 });
+    const ref = useRef<HTMLDivElement>(null);
+
+    const isPiPSupported = 'documentPictureInPicture' in window;
+
+    useEffect(() => {
+        if (window.innerWidth < 768) {
+             setPosition({ x: (window.innerWidth - 300) / 2, y: window.innerHeight - 140 });
+        }
+    }, []);
+
+    const handleStart = (clientX: number, clientY: number) => {
+        if (ref.current) {
+            setIsDragging(true);
+            const rect = ref.current.getBoundingClientRect();
+            offset.current = {
+                x: clientX - rect.left,
+                y: clientY - rect.top
+            };
+        }
+    };
+
+    const handleMove = (clientX: number, clientY: number) => {
+        if (isDragging) {
+            setPosition({
+                x: clientX - offset.current.x,
+                y: clientY - offset.current.y
+            });
+        }
+    };
+
+    const handleEnd = () => {
+        setIsDragging(false);
+    };
+
+    useEffect(() => {
+        const onMouseMove = (e: MouseEvent) => handleMove(e.clientX, e.clientY);
+        const onMouseUp = () => handleEnd();
+        const onTouchMove = (e: TouchEvent) => handleMove(e.touches[0].clientX, e.touches[0].clientY);
+        const onTouchEnd = () => handleEnd();
+
+        if (isDragging) {
+            window.addEventListener('mousemove', onMouseMove);
+            window.addEventListener('mouseup', onMouseUp);
+            window.addEventListener('touchmove', onTouchMove, { passive: false });
+            window.addEventListener('touchend', onTouchEnd);
+        }
+
+        return () => {
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('mouseup', onMouseUp);
+            window.removeEventListener('touchmove', onTouchMove);
+            window.removeEventListener('touchend', onTouchEnd);
+        };
+    }, [isDragging]);
+
+    if (isPiPActive) return null;
+
+    return (
+        <div
+            ref={ref}
+            style={{
+                position: 'fixed',
+                left: position.x,
+                top: position.y,
+                touchAction: 'none',
+                cursor: isDragging ? 'grabbing' : 'grab',
+                zIndex: 9999
+            }}
+            onMouseDown={(e) => handleStart(e.clientX, e.clientY)}
+            onTouchStart={(e) => handleStart(e.touches[0].clientX, e.touches[0].clientY)}
+            className="shadow-2xl rounded-full"
+        >
+            <div className="bg-[#334155] text-white rounded-full p-2 pl-6 pr-2 flex items-center gap-4 shadow-lg border border-slate-600/50 min-w-[280px] max-w-[320px]">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                   <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse shrink-0 shadow-[0_0_8px_rgba(239,68,68,0.6)]"></div>
+                   <div className="flex flex-col overflow-hidden">
+                       <span className="text-[10px] text-slate-400 font-bold leading-none mb-0.5">計測中</span>
+                       <span className="text-sm font-bold truncate leading-none">{activeClientName || '作業中'}</span>
+                   </div>
+                </div>
+
+                <div className="font-mono font-bold text-lg text-slate-200 tabular-nums">
+                    {elapsedTime}
+                </div>
+
+                {isPiPSupported && (
+                    <button
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onTouchStart={(e) => e.stopPropagation()}
+                        onClick={onTogglePiP}
+                        className="h-10 w-10 bg-[#1e293b] hover:bg-black text-white rounded-full text-xs font-bold flex items-center justify-center active:scale-95 transition-all border border-slate-600"
+                        title="ピクチャーインピクチャーで表示"
+                    >
+                       <PictureInPicture2 size={16} />
+                    </button>
+                )}
+
+                <button
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    onClick={onStop}
+                    className="h-10 px-5 bg-[#1e293b] hover:bg-black text-white rounded-full text-xs font-bold flex items-center gap-2 active:scale-95 transition-all border border-slate-600"
+                >
+                   <Square size={10} fill="currentColor" /> 停止
+                </button>
+            </div>
+        </div>
+    );
+};
+
+// --- Helper Components ---
+
+const MobileNavItem: React.FC<{ to: string; icon: React.ReactNode; label: string; active?: boolean }> = ({ to, icon, label, active }) => {
+  return (
+    <Link to={to} className="flex flex-col items-center justify-center py-2 flex-1 relative transition-colors duration-200">
+      <div className={`${active ? 'theme-text' : 'text-slate-400'}`}>
+        {React.cloneElement(icon as React.ReactElement, { size: 24, strokeWidth: active ? 2.5 : 2, fill: "none" })}
+      </div>
+      <span className={`text-[10px] mt-1 font-bold ${active ? 'theme-text' : 'text-slate-400'}`}>{label}</span>
+      {active && <div className="absolute bottom-1 w-1 h-1 rounded-full theme-bg"></div>}
+    </Link>
+  );
+};
+
+const DesktopNavItem: React.FC<{ to: string; icon: React.ReactNode; label: string; active?: boolean }> = ({ to, icon, label, active }) => {
+    return (
+      <Link to={to} className={`flex items-center gap-4 px-6 py-4 transition-colors duration-200 rounded-xl mx-2 ${active ? 'bg-slate-50 theme-text font-black' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700 font-bold'}`}>
+        {React.cloneElement(icon as React.ReactElement, { size: 24, strokeWidth: active ? 2.5 : 2 })}
+        <span className="text-sm">{label}</span>
+        {active && <div className="ml-auto w-1.5 h-1.5 rounded-full theme-bg"></div>}
+      </Link>
+    );
+};
+  
+
+const formatForInput = (ts: number | null) => {
+  if (!ts) return '';
+  const d = new Date(ts);
+  const offset = d.getTimezoneOffset() * 60000;
+  return new Date(ts - offset).toISOString().slice(0, 16);
+};
+
+const formatTimeLong = (ms: number) => {
+  const seconds = Math.floor((ms / 1000) % 60);
+  const minutes = Math.floor((ms / (1000 * 60)) % 60);
+  const hours = Math.floor((ms / (1000 * 60 * 60)));
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+};
+const formatTimeShort = (ms: number) => {
+    const seconds = Math.floor((ms / 1000) % 60);
+    const minutes = Math.floor((ms / (1000 * 60)) % 60);
+    const hours = Math.floor((ms / (1000 * 60 * 60)));
+    if (hours > 0) return `${hours}:${minutes.toString().padStart(2, '0')}`;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+// --- Shared Components ---
+
+const EditEntryDrawer: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    entry: TimeEntry | null;
+    clients: Client[];
+    onSave: (id: string, updates: Partial<TimeEntry>) => void;
+    onDelete: (id: string) => void;
+}> = ({ isOpen, onClose, entry, clients, onSave, onDelete }) => {
+    const [editDesc, setEditDesc] = useState('');
+    const [editStart, setEditStart] = useState('');
+    const [editEnd, setEditEnd] = useState('');
+    const [editClientId, setEditClientId] = useState('');
+
+    useEffect(() => {
+        if (entry) {
+            setEditDesc(entry.description);
+            setEditStart(formatForInput(entry.startTime));
+            setEditEnd(formatForInput(entry.endTime));
+            setEditClientId(entry.clientId);
+        }
+    }, [entry]);
+
+    if (!isOpen || !entry) return null;
+
+    const handleStartChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const newStart = e.target.value;
+        setEditStart(newStart);
+        if (editEnd && newStart) {
+            const startDatePart = newStart.split('T')[0];
+            const endTimePart = editEnd.split('T')[1];
+            if (startDatePart && endTimePart) {
+                setEditEnd(`${startDatePart}T${endTimePart}`);
+            }
+        }
+    };
+
+    const handleSave = () => {
+        onSave(entry.id, {
+            description: editDesc,
+            clientId: editClientId,
+            startTime: new Date(editStart).getTime(),
+            endTime: editEnd ? new Date(editEnd).getTime() : null,
+        });
+        onClose();
+    };
+
+    return (
+        <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-300">
+            <div className="bg-white w-full max-w-md rounded-t-[40px] p-8 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[90vh] overflow-y-auto">
+                <div className="w-12 h-1 bg-slate-100 rounded-full mx-auto mb-6"></div>
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-xl font-black text-slate-800">履歴の編集</h3>
+                    <button 
+                        onClick={() => {
+                            if (confirm('この履歴を完全に削除しますか？')) {
+                                onDelete(entry.id);
+                                onClose();
+                            }
+                        }} 
+                        className="p-2 text-red-500 bg-red-50 rounded-full hover:bg-red-100 transition-colors"
+                    >
+                        <Trash2 size={20} />
+                    </button>
+                </div>
+                
+                <div className="space-y-5 mb-8">
+                    <div>
+                        <label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">クライアント</label>
+                        <Select value={editClientId} onChange={e => setEditClientId(e.target.value)} className="!rounded-xl border-slate-200 h-12">
+                            {clients.map(c => (
+                                <option key={c.id} value={c.id}>{c.name}</option>
+                            ))}
+                        </Select>
+                    </div>
+                    
+                    <div>
+                        <label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">作業内容</label>
+                        <Input value={editDesc} onChange={e => setEditDesc(e.target.value)} className="!h-12" />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">開始時刻</label>
+                            <Input type="datetime-local" value={editStart} onChange={handleStartChange} className="!text-xs font-bold h-12" />
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">終了時刻</label>
+                            <Input type="datetime-local" value={editEnd} onChange={e => setEditEnd(e.target.value)} className="!text-xs font-bold h-12" />
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex gap-3">
+                    <Button onClick={onClose} variant="secondary" className="flex-1 h-14 rounded-2xl">閉じる</Button>
+                    <Button onClick={handleSave} className="flex-[2] theme-bg contrast-text border-none font-black h-14 rounded-2xl">保存する</Button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// --- Page Components ---
+
+const UsagePage: React.FC = () => {
+    return (
+        <div className="space-y-6 animate-fade-in pb-20">
+             <div className="mb-4 ml-1">
+                 <h2 className="text-xl font-black text-slate-800">Logmeeの使い方ガイド</h2>
+                 <p className="text-xs text-slate-500 font-bold mt-1">フリーランスのための時間管理・請求管理ツール</p>
+            </div>
+
+            <div className="space-y-8">
+                {/* Step 1 */}
+                <section>
+                    <div className="flex items-center gap-3 mb-3">
+                        <div className="w-8 h-8 rounded-full theme-bg contrast-text flex items-center justify-center font-black shadow-sm">1</div>
+                        <h3 className="font-bold text-slate-700">クライアントを登録する</h3>
+                    </div>
+                    <Card className="!p-5 border-l-4 theme-border">
+                        <div className="flex gap-4">
+                            <div className="mt-1 text-slate-400"><Users size={24} /></div>
+                            <div className="text-sm text-slate-600 leading-relaxed">
+                                <p className="mb-2">まずは<span className="font-bold text-slate-800">「クライアント管理」</span>ページから取引先を登録しましょう。</p>
+                                <ul className="list-disc pl-4 space-y-1 text-xs font-bold text-slate-500">
+                                    <li>クライアントごとのテーマカラーを設定可能</li>
+                                    <li><span className="text-slate-700">基本時給</span>を設定すると、自動で売上を計算</li>
+                                    <li><span className="text-slate-700">固定報酬</span>（月額リテナーなど）の設定も可能</li>
+                                    <li>請求書の<span className="text-slate-700">締日</span>を設定して、期間集計をスムーズに</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </Card>
+                </section>
+
+                {/* Step 2 */}
+                <section>
+                    <div className="flex items-center gap-3 mb-3">
+                        <div className="w-8 h-8 rounded-full theme-bg contrast-text flex items-center justify-center font-black shadow-sm">2</div>
+                        <h3 className="font-bold text-slate-700">作業時間を計測する</h3>
+                    </div>
+                    <Card className="!p-5 border-l-4 theme-border">
+                        <div className="flex gap-4">
+                            <div className="mt-1 text-slate-400"><Clock size={24} /></div>
+                            <div className="text-sm text-slate-600 leading-relaxed">
+                                <p className="mb-2"><span className="font-bold text-slate-800">「タイマー」</span>ページで日々の作業を記録します。</p>
+                                <div className="space-y-3 mt-3">
+                                    <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg">
+                                        <Clock size={16} className="text-slate-500" />
+                                        <div className="text-xs"><span className="font-bold">時給</span>: 作業時間に応じて売上が自動計算されます</div>
+                                    </div>
+                                    <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg">
+                                        <Briefcase size={16} className="text-slate-500" />
+                                        <div className="text-xs"><span className="font-bold">固定</span>: 時間計測のみ（売上は月次固定報酬で管理）</div>
+                                    </div>
+                                    <div className="text-xs text-slate-400 font-bold mt-2">
+                                        ※ クライアントに時給か固定報酬のどちらか一方のみ設定している場合、自動で選択されます。
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </Card>
+                </section>
+
+                {/* Step 3 - 月次固定報酬 */}
+                <section>
+                    <div className="flex items-center gap-3 mb-3">
+                        <div className="w-8 h-8 rounded-full theme-bg contrast-text flex items-center justify-center font-black shadow-sm">3</div>
+                        <h3 className="font-bold text-slate-700">月次固定報酬を管理する</h3>
+                    </div>
+                    <Card className="!p-5 border-l-4 theme-border">
+                        <div className="flex gap-4">
+                            <div className="mt-1 text-slate-400"><Coins size={24} /></div>
+                            <div className="text-sm text-slate-600 leading-relaxed">
+                                <p className="mb-2">固定報酬は<span className="font-bold text-slate-800">「クライアント管理」</span>ページ下部で月ごとに管理できます。</p>
+                                <ul className="list-disc pl-4 space-y-1 text-xs font-bold text-slate-500">
+                                    <li>固定報酬を設定したクライアントが一覧表示されます</li>
+                                    <li>月を選択し、<span className="text-slate-700">トグルをON</span>にするとその月の売上に含まれます</li>
+                                    <li>時間計測なしでも売上に反映可能（月額契約など）</li>
+                                    <li>単発案件や月によって変動する契約にも対応</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </Card>
+                </section>
+
+                {/* Step 4 */}
+                <section>
+                    <div className="flex items-center gap-3 mb-3">
+                        <div className="w-8 h-8 rounded-full theme-bg contrast-text flex items-center justify-center font-black shadow-sm">4</div>
+                        <h3 className="font-bold text-slate-700">履歴の確認・修正</h3>
+                    </div>
+                    <Card className="!p-5 border-l-4 theme-border">
+                        <div className="flex gap-4">
+                            <div className="mt-1 text-slate-400"><History size={24} /></div>
+                            <div className="text-sm text-slate-600 leading-relaxed">
+                                <p className="mb-2"><span className="font-bold text-slate-800">「稼働履歴」</span>ページで記録を確認できます。</p>
+                                <ul className="list-disc pl-4 space-y-1 text-xs font-bold text-slate-500">
+                                    <li>履歴をタップして<span className="text-slate-700">時間や内容を修正</span>できます</li>
+                                    <li>時間の入力ミスや、計測忘れも後から編集可能です</li>
+                                    <li>右上のカレンダーで表示月を切り替えられます</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </Card>
+                </section>
+
+                {/* Step 5 */}
+                <section>
+                    <div className="flex items-center gap-3 mb-3">
+                        <div className="w-8 h-8 rounded-full theme-bg contrast-text flex items-center justify-center font-black shadow-sm">5</div>
+                        <h3 className="font-bold text-slate-700">報告書・請求書を作成</h3>
+                    </div>
+                    <Card className="!p-5 border-l-4 theme-border">
+                        <div className="flex gap-4">
+                            <div className="mt-1 text-slate-400"><FileText size={24} /></div>
+                            <div className="text-sm text-slate-600 leading-relaxed">
+                                <p className="mb-2"><span className="font-bold text-slate-800">「報告書」</span>ページでPDFを生成します。</p>
+                                <div className="space-y-2 mt-2">
+                                    <div className="flex gap-2">
+                                        <div className="min-w-[4px] h-4 bg-slate-300 rounded-full mt-1"></div>
+                                        <div className="text-xs"><span className="font-bold text-slate-700">期間指定</span>: 「今月」「先月」ボタンまたは日付指定で範囲を選択</div>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <div className="min-w-[4px] h-4 bg-slate-300 rounded-full mt-1"></div>
+                                        <div className="text-xs"><span className="font-bold text-slate-700">表示オプション</span>: 「同日の作業をまとめる」機能で、すっきりした明細を作成可能</div>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <div className="min-w-[4px] h-4 bg-slate-300 rounded-full mt-1"></div>
+                                        <div className="text-xs"><span className="font-bold text-slate-700">CSV出力</span>: 他のソフトで集計したい場合に便利です</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </Card>
+                </section>
+
+                {/* Tips */}
+                <section>
+                     <div className="flex items-center gap-2 mb-3 mt-8">
+                        <Lightbulb size={20} className="text-yellow-500 fill-current" />
+                        <h3 className="font-bold text-slate-700">便利な機能</h3>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                         <Card className="!p-4 bg-slate-800 text-white">
+                             <div className="font-bold text-sm mb-2 flex items-center gap-2"><PictureInPicture2 size={16} /> フローティングタイマー</div>
+                             <div className="text-xs text-slate-300">
+                                 タイマー計測中は画面下部に浮遊バーが表示されます。PCのChrome/Edgeでは、PiPアイコンをクリックすると小窓で表示でき、他のアプリを使いながらでもタイマーを確認・停止できます。
+                             </div>
+                         </Card>
+                         <Card className="!p-4 bg-slate-50">
+                             <div className="font-bold text-sm mb-2 flex items-center gap-2 text-slate-700"><Flame size={16} className="text-orange-400" /> タスクプリセット</div>
+                             <div className="text-xs text-slate-500">
+                                 よく使う作業内容は自動でプリセット登録されます。タイマー画面でワンタップで入力できるので、毎回入力する手間が省けます。
+                             </div>
+                         </Card>
+                         <Card className="!p-4 bg-slate-50">
+                             <div className="font-bold text-sm mb-2 flex items-center gap-2 text-slate-700"><Settings size={16} /> テーマカラー変更</div>
+                             <div className="text-xs text-slate-500">
+                                 設定画面からアプリ全体のテーマカラーを変更できます。グラデーションも選択可能です。
+                             </div>
+                         </Card>
+                         <Card className="!p-4 bg-slate-50">
+                             <div className="font-bold text-sm mb-2 flex items-center gap-2 text-slate-700"><BarChart2 size={16} /> データ分析</div>
+                             <div className="text-xs text-slate-500">
+                                 「データ分析」ページでは、クライアントごとの稼働割合や、日々の稼働推移をグラフで可視化できます。
+                             </div>
+                         </Card>
+                    </div>
+                </section>
+            </div>
+
+            <div className="mt-12 text-center">
+                 <Link to="/" className="inline-flex items-center gap-2 px-6 py-3 rounded-full theme-bg contrast-text font-black text-sm shadow-md hover:shadow-lg transition-all active:scale-95">
+                     さっそく使い始める <ArrowRight size={16} />
+                 </Link>
+            </div>
+        </div>
+    );
+};
+
+type ClientStat = { 
+    name: string; 
+    color: string;
+    hours: number; 
+    revenue: number; 
+    count: number;
+};
+
+const AnalyticsPage: React.FC<{ state: AppState }> = ({ state }) => {
+    const [displayMonth, setDisplayMonth] = useState(new Date());
+
+    const handlePrevMonth = () => setDisplayMonth(new Date(displayMonth.getFullYear(), displayMonth.getMonth() - 1, 1));
+    const handleNextMonth = () => setDisplayMonth(new Date(displayMonth.getFullYear(), displayMonth.getMonth() + 1, 1));
+
+    const analysis = useMemo(() => {
+        const yearMonth = `${displayMonth.getFullYear()}-${String(displayMonth.getMonth() + 1).padStart(2, '0')}`;
+        const startOfMonth = new Date(displayMonth.getFullYear(), displayMonth.getMonth(), 1).getTime();
+        const endOfMonth = new Date(displayMonth.getFullYear(), displayMonth.getMonth() + 1, 0, 23, 59, 59).getTime();
+
+        const monthlyEntries = state.entries.filter(e => e.startTime >= startOfMonth && e.startTime <= endOfMonth);
+
+        const clientStats: {[key: string]: ClientStat} = {};
+
+        // 時間計測ベースの集計
+        monthlyEntries.forEach(e => {
+            const client = state.clients.find(c => c.id === e.clientId);
+            if (!client) return;
+
+            if (!clientStats[e.clientId]) {
+                clientStats[e.clientId] = {
+                    name: client.name,
+                    color: client.color,
+                    hours: 0,
+                    revenue: 0,
+                    count: 0
+                };
+            }
+
+            const hours = (e.endTime ? (e.endTime - e.startTime) : (Date.now() - e.startTime)) / 3600000;
+            clientStats[e.clientId].hours += hours;
+            clientStats[e.clientId].count += 1;
+
+            if (client.defaultHourlyRate) {
+                clientStats[e.clientId].revenue += hours * client.defaultHourlyRate;
+            }
+        });
+
+        // 月次固定報酬を加算
+        const monthlyFixedFees = state.monthlyFixedFees.filter(f => f.yearMonth === yearMonth);
+        monthlyFixedFees.forEach(fee => {
+            const client = state.clients.find(c => c.id === fee.clientId);
+            if (!client) return;
+
+            if (!clientStats[fee.clientId]) {
+                clientStats[fee.clientId] = {
+                    name: client.name,
+                    color: client.color,
+                    hours: 0,
+                    revenue: 0,
+                    count: 0
+                };
+            }
+            clientStats[fee.clientId].revenue += fee.amount;
+        });
+
+        const totalHours = Object.values(clientStats).reduce((acc, c) => acc + c.hours, 0);
+        const totalRevenue = Object.values(clientStats).reduce((acc, c) => acc + c.revenue, 0);
+
+        const pieData = Object.values(clientStats).map(c => ({
+            name: c.name,
+            value: c.hours,
+            color: c.color
+        })).filter(d => d.value > 0);
+
+        const dailyData = [];
+        const daysInMonth = new Date(displayMonth.getFullYear(), displayMonth.getMonth() + 1, 0).getDate();
+        for(let i=1; i<=daysInMonth; i++) {
+            const dayStart = new Date(displayMonth.getFullYear(), displayMonth.getMonth(), i).getTime();
+            const dayEnd = new Date(displayMonth.getFullYear(), displayMonth.getMonth(), i+1).getTime();
+            const dayHours = monthlyEntries.reduce((acc, e) => {
+                if(e.startTime >= dayStart && e.startTime < dayEnd) {
+                    return acc + ((e.endTime || Date.now()) - e.startTime)/3600000;
+                }
+                return acc;
+            }, 0);
+            dailyData.push({ day: i, hours: dayHours });
+        }
+
+        return { clientStats, totalHours, totalRevenue, pieData, dailyData };
+    }, [state.entries, state.clients, state.monthlyFixedFees, displayMonth]);
+
+    return (
+        <div className="space-y-6 animate-fade-in pb-20">
+             <div className="flex justify-between items-center mb-2">
+                 <h2 className="text-lg font-black text-slate-800">データ分析・実績</h2>
+                 <div className="flex items-center bg-white rounded-xl border border-slate-200 p-1 shadow-sm">
+                     <button onClick={handlePrevMonth} className="p-1 hover:bg-slate-100 rounded-lg"><ChevronLeft size={18} className="text-slate-500" /></button>
+                     <span className="text-xs font-bold text-slate-800 px-3 min-w-[80px] text-center">
+                         {displayMonth.getFullYear()}年{displayMonth.getMonth() + 1}月
+                     </span>
+                     <button onClick={handleNextMonth} className="p-1 hover:bg-slate-100 rounded-lg"><ChevronRight size={18} className="text-slate-500" /></button>
+                 </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+                <Card className="!p-4 bg-gradient-to-br from-slate-800 to-slate-900 text-white flex flex-col justify-between h-28">
+                    <div className="flex items-center gap-2 opacity-80">
+                        <TrendingUp size={16} />
+                        <span className="text-xs font-bold">総稼働時間</span>
+                    </div>
+                    <div className="text-3xl font-black tracking-tighter">
+                        {analysis.totalHours.toFixed(2)} <span className="text-sm opacity-60">h</span>
+                    </div>
+                </Card>
+                <Card className="!p-4 theme-bg contrast-text flex flex-col justify-between h-28">
+                    <div className="flex items-center gap-2 opacity-80">
+                        <DollarSign size={16} />
+                        <span className="text-xs font-bold">推定売上</span>
+                    </div>
+                    <div className="text-3xl font-black tracking-tighter">
+                        <span className="text-sm opacity-60">¥</span> {analysis.totalRevenue.toLocaleString()}
+                    </div>
+                </Card>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Card className="!p-4 min-h-[300px]">
+                    <div className="flex items-center gap-2 mb-4">
+                        <PieChartIcon size={16} className="text-slate-400" />
+                        <h3 className="text-xs font-black text-slate-700 uppercase">クライアント別 稼働割合</h3>
+                    </div>
+                    <div className="h-56 w-full flex items-center justify-center">
+                        {analysis.pieData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie
+                                        data={analysis.pieData}
+                                        innerRadius={60}
+                                        outerRadius={80}
+                                        paddingAngle={5}
+                                        dataKey="value"
+                                    >
+                                        {analysis.pieData.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
+                                        ))}
+                                    </Pie>
+                                    <Legend 
+                                        verticalAlign="bottom" 
+                                        height={36} 
+                                        iconType="circle" 
+                                        iconSize={8}
+                                        formatter={(value) => <span className="text-[10px] font-bold text-slate-600 ml-1">{value}</span>}
+                                    />
+                                    <RechartsTooltip 
+                                        contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}}
+                                        formatter={(value: number) => `${value.toFixed(2)} h`}
+                                    />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="text-slate-300 text-xs font-bold">データがありません</div>
+                        )}
+                    </div>
+                </Card>
+
+                <Card className="!p-4 min-h-[300px]">
+                    <div className="flex items-center gap-2 mb-4">
+                        <Activity size={16} className="text-slate-400" />
+                        <h3 className="text-xs font-black text-slate-700 uppercase">日次稼働推移</h3>
+                    </div>
+                    <div className="h-56 w-full">
+                         <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={analysis.dailyData}>
+                                <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{fontSize: 9, fill: '#94a3b8'}} interval={4} />
+                                <RechartsTooltip 
+                                    cursor={{fill: '#f8fafc'}}
+                                    contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}}
+                                    formatter={(value: number) => [`${value.toFixed(2)} h`, '稼働']}
+                                />
+                                <Bar dataKey="hours" fill="#cbd5e1" radius={[2, 2, 2, 2]} barSize={4} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </Card>
+            </div>
+
+            <div className="bg-white rounded-3xl shadow-sm overflow-hidden">
+                <div className="p-4 border-b border-slate-100 flex items-center gap-2">
+                    <LayoutList size={16} className="text-slate-400" />
+                    <h3 className="text-xs font-black text-slate-700 uppercase">月次実績表</h3>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                        <thead>
+                            <tr className="bg-slate-50 text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                                <th className="p-4 rounded-tl-lg">クライアント</th>
+                                <th className="p-4 text-right">稼働時間</th>
+                                <th className="p-4 text-right">推定売上</th>
+                                <th className="p-4 text-right">シェア</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {Object.values(analysis.clientStats).sort((a: ClientStat, b: ClientStat) => b.hours - a.hours).map((client: ClientStat) => (
+                                <tr key={client.name} className="hover:bg-slate-50/50 transition-colors">
+                                    <td className="p-4">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-2 h-2 rounded-full" style={{backgroundColor: client.color}}></div>
+                                            <span className="text-xs font-bold text-slate-700">{client.name}</span>
+                                        </div>
+                                    </td>
+                                    <td className="p-4 text-right font-mono text-xs font-bold text-slate-600">
+                                        {client.hours.toFixed(2)} h
+                                    </td>
+                                    <td className="p-4 text-right font-mono text-xs font-bold text-slate-800">
+                                        ¥{client.revenue.toLocaleString()}
+                                    </td>
+                                    <td className="p-4 text-right text-[10px] font-bold text-slate-400">
+                                        {analysis.totalHours > 0 ? ((client.hours / analysis.totalHours) * 100).toFixed(1) : 0}%
+                                    </td>
+                                </tr>
+                            ))}
+                            {Object.keys(analysis.clientStats).length === 0 && (
+                                <tr>
+                                    <td colSpan={4} className="p-8 text-center text-xs text-slate-400 font-bold">データがありません</td>
+                                </tr>
+                            )}
+                        </tbody>
+                        <tfoot className="bg-slate-50 border-t-2 border-slate-100">
+                            <tr>
+                                <td className="p-4 text-xs font-black text-slate-700">合計</td>
+                                <td className="p-4 text-right font-mono text-xs font-black text-slate-800">{analysis.totalHours.toFixed(2)} h</td>
+                                <td className="p-4 text-right font-mono text-xs font-black text-slate-800">¥{analysis.totalRevenue.toLocaleString()}</td>
+                                <td className="p-4"></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const LogsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({ state, dispatch }) => {
+  const [filterClientId, setFilterClientId] = useState('all');
+  const [displayMonth, setDisplayMonth] = useState(new Date());
+  const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
+  
+  const handlePrevMonth = () => {
+    setDisplayMonth(new Date(displayMonth.getFullYear(), displayMonth.getMonth() - 1, 1));
+  };
+  
+  const handleNextMonth = () => {
+    setDisplayMonth(new Date(displayMonth.getFullYear(), displayMonth.getMonth() + 1, 1));
+  };
+
+  const entriesByDate = useMemo(() => {
+    let list = [...state.entries];
+    const startOfMonth = new Date(displayMonth.getFullYear(), displayMonth.getMonth(), 1).getTime();
+    const endOfMonth = new Date(displayMonth.getFullYear(), displayMonth.getMonth() + 1, 0, 23, 59, 59).getTime();
+    list = list.filter(e => e.startTime >= startOfMonth && e.startTime <= endOfMonth);
+    if (filterClientId !== 'all') {
+      list = list.filter(e => e.clientId === filterClientId);
+    }
+    list.sort((a, b) => b.startTime - a.startTime);
+    const groups: { [key: string]: { entries: TimeEntry[], totalDuration: number } } = {};
+    list.forEach(e => {
+      const dateKey = new Date(e.startTime).toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' });
+      if (!groups[dateKey]) groups[dateKey] = { entries: [], totalDuration: 0 };
+      groups[dateKey].entries.push(e);
+      if (e.endTime) {
+          groups[dateKey].totalDuration += (e.endTime - e.startTime);
+      }
+    });
+    return groups;
+  }, [state.entries, filterClientId, displayMonth]);
+
+  return (
+    <div className="space-y-4 animate-fade-in pb-20">
+      <div className="flex flex-col gap-4 px-1">
+        <div className="flex justify-between items-center">
+             <h2 className="text-lg font-black text-slate-800">稼働履歴</h2>
+             <div className="flex items-center bg-white rounded-xl border border-slate-200 p-1 shadow-sm">
+                 <button onClick={handlePrevMonth} className="p-1 hover:bg-slate-100 rounded-lg"><ChevronLeft size={18} className="text-slate-500" /></button>
+                 <span className="text-xs font-bold text-slate-800 px-3 min-w-[80px] text-center">
+                     {displayMonth.getFullYear()}年{displayMonth.getMonth() + 1}月
+                 </span>
+                 <button onClick={handleNextMonth} className="p-1 hover:bg-slate-100 rounded-lg"><ChevronRight size={18} className="text-slate-500" /></button>
+             </div>
+        </div>
+        
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+           <button 
+             onClick={() => setFilterClientId('all')}
+             className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-bold border transition-all ${filterClientId === 'all' ? 'bg-slate-800 text-white border-transparent' : 'bg-white border-slate-200 text-slate-500'}`}
+           >
+             すべて
+           </button>
+           {state.clients.map(c => (
+             <button
+               key={c.id}
+               onClick={() => setFilterClientId(c.id)}
+               className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-bold border transition-all flex items-center gap-1 ${filterClientId === c.id ? 'theme-bg contrast-text border-transparent' : 'bg-white border-slate-200 text-slate-500'}`}
+             >
+               <div className="w-1.5 h-1.5 rounded-full bg-current opacity-50"></div>
+               {c.name}
+             </button>
+           ))}
+        </div>
+      </div>
+
+      <div className="space-y-6">
+        {Object.keys(entriesByDate).map(dateKey => {
+            const { entries, totalDuration } = entriesByDate[dateKey];
+            const totalHours = totalDuration / 3600000;
+            return (
+              <div key={dateKey} className="space-y-3">
+                <div className="sticky top-[72px] z-20 bg-[#F8F9FA]/95 backdrop-blur-md py-2 px-1 rounded-lg flex justify-between items-baseline border-b border-slate-200/50">
+                   <h3 className="text-sm font-black text-slate-700 tracking-tight">{dateKey}</h3>
+                   <div className="text-xs font-bold text-slate-400 bg-white px-2 py-0.5 rounded-md border border-slate-100">
+                      計 <span className="text-slate-800 font-black">{totalHours.toFixed(2)}</span> h
+                   </div>
+                </div>
+                
+                <div className="flex flex-col gap-3 pl-2 ml-2">
+                  {entries.map(e => {
+                    const client = state.clients.find(c => c.id === e.clientId);
+                    const duration = e.endTime ? (e.endTime - e.startTime) / 3600000 : 0;
+                    return (
+                      <div 
+                        key={e.id} 
+                        onClick={() => setEditingEntry(e)}
+                        className="bg-white p-4 rounded-xl shadow-sm relative overflow-hidden group transition-all duration-200 hover:shadow-md active:scale-[0.99] cursor-pointer"
+                      >
+                        <div className="relative z-10 pl-2">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-[10px] text-slate-400 font-mono font-bold mb-1 flex items-center gap-2">
+                                   <span>{new Date(e.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                                   <div className="h-px w-3 bg-slate-200"></div>
+                                   <span>{e.endTime ? new Date(e.endTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '継続中...'}</span>
+                                   <div className="ml-1 px-1.5 py-0.5 rounded bg-slate-100 flex items-center gap-1 text-[8px] uppercase tracking-wider text-slate-500">
+                                      {e.rateType === 'fixed' ? <Briefcase size={8} /> : <Clock size={8} />}
+                                      {e.rateType === 'fixed' ? 'FIXED' : 'HOURLY'}
+                                   </div>
+                                </div>
+                                <div className="text-sm font-bold text-slate-800 truncate mb-1 leading-snug">{e.description || '(内容未設定)'}</div>
+                                <div className="inline-flex items-center gap-1.5 mt-1">
+                                  <div className="w-8 h-6 rounded flex items-center justify-center text-[9px] font-bold text-white shadow-sm" style={{ backgroundColor: client?.color || '#ccc' }}>
+                                    {client?.name?.charAt(0) || '?'}
+                                  </div>
+                                  <span className="text-[10px] font-bold text-slate-500">{client?.name || '不明'}</span>
+                                </div>
+                              </div>
+                              <div className="flex flex-col items-end gap-1">
+                                <div className="text-lg font-black text-slate-700 tracking-tighter leading-none">{duration.toFixed(2)}<span className="text-[10px] font-bold text-slate-400 ml-0.5">h</span></div>
+                                {!e.endTime && <div className="w-2 h-2 rounded-full theme-bg animate-pulse"></div>}
+                              </div>
+                            </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+        })}
+        {Object.keys(entriesByDate).length === 0 && (
+          <div className="text-center py-10 bg-white rounded-3xl border-2 border-dashed border-slate-100 text-slate-400 text-xs">
+            {displayMonth.getFullYear()}年{displayMonth.getMonth() + 1}月の履歴はありません
+          </div>
+        )}
+      </div>
+
+      <EditEntryDrawer 
+         isOpen={!!editingEntry}
+         onClose={() => setEditingEntry(null)}
+         entry={editingEntry}
+         clients={state.clients}
+         onSave={(id, updates) => dispatch({type: 'UPDATE_ENTRY', payload: {id, ...updates}})}
+         onDelete={(id) => dispatch({type: 'DELETE_ENTRY', payload: id})}
+      />
+    </div>
+  );
+};
+
+const ReportPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({ state, dispatch }) => {
+  const [startDate, setStartDate] = useState(() => {
+    const d = new Date();
+    d.setDate(1);
+    return d.toISOString().slice(0, 10);
+  });
+  const [endDate, setEndDate] = useState(() => {
+    const d = new Date();
+    return d.toISOString().slice(0, 10);
+  });
+  
+  const [selectedClientId, setSelectedClientId] = useState(() => state.clients.length > 0 ? state.clients[0].id : '');
+  const [reportTitle, setReportTitle] = useState('作業報告書');
+  const [reportBusinessName, setReportBusinessName] = useState('');
+  const [customUserName, setCustomUserName] = useState(state.settings.userName || 'Logmee User');
+  const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [groupByDate, setGroupByDate] = useState(false);
+  const [showTimeRange, setShowTimeRange] = useState(true);
+  const [showDuration, setShowDuration] = useState(true);
+  const [showTotalHoursOnly, setShowTotalHoursOnly] = useState(true);
+
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewData, setPreviewData] = useState<any>(null);
+  const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
+
+  useEffect(() => {
+      setCustomUserName(state.settings.userName || 'Logmee User');
+  }, [state.settings.userName]);
+
+  useEffect(() => {
+      if (selectedClientId === 'all' || selectedClientId === '') {
+          if (state.clients.length > 0) setSelectedClientId(state.clients[0].id);
+      } else if (state.clients.length > 0 && !state.clients.find(c => c.id === selectedClientId)) {
+          setSelectedClientId(state.clients[0].id);
+      }
+  }, [state.clients, selectedClientId]);
+
+  const handleSetDateRange = (type: 'thisMonth' | 'lastMonth') => {
+      const today = new Date();
+      let sDate = new Date();
+      let eDate = new Date();
+      const client = state.clients.find(c => c.id === selectedClientId);
+      const closingDay = (client && client.closingDate) ? client.closingDate : 99;
+      const currentDay = today.getDate();
+      let targetYear = today.getFullYear();
+      let targetMonth = today.getMonth();
+
+     if (closingDay === 99) {
+         if (type === 'thisMonth') {
+             sDate = new Date(targetYear, targetMonth, 1);
+             eDate = new Date(targetYear, targetMonth + 1, 0);
+         } else {
+             sDate = new Date(targetYear, targetMonth - 1, 1);
+             eDate = new Date(targetYear, targetMonth, 0);
+         }
+     } else {
+         if (type === 'thisMonth') {
+             if (currentDay <= closingDay) {
+                 sDate = new Date(targetYear, targetMonth - 1, closingDay + 1);
+                 eDate = new Date(targetYear, targetMonth, closingDay);
+             } else {
+                 sDate = new Date(targetYear, targetMonth - 1, closingDay + 1);
+                 eDate = new Date(targetYear, targetMonth + 1, closingDay);
+             }
+         } else {
+             if (currentDay <= closingDay) {
+                 sDate = new Date(targetYear, targetMonth - 2, closingDay + 1);
+                 eDate = new Date(targetYear, targetMonth - 1, closingDay);
+             } else {
+                 sDate = new Date(targetYear, targetMonth - 1, closingDay + 1);
+                 eDate = new Date(targetYear, targetMonth, closingDay);
+             }
+         }
+     }
+      setStartDate(formatForInput(sDate.getTime()).slice(0, 10));
+      setEndDate(formatForInput(eDate.getTime()).slice(0, 10));
+  };
+
+  const filteredEntriesRaw = useMemo(() => {
+    const sDate = new Date(startDate);
+    const eDate = new Date(endDate + 'T23:59:59');
+    return state.entries.filter(entry => {
+        if (!entry.endTime) return false;
+        const entryDate = new Date(entry.startTime);
+        const matchesClient = entry.clientId === selectedClientId;
+        const inRange = entryDate >= sDate && entryDate <= eDate;
+        return matchesClient && inRange;
+    }).sort((a,b) => a.startTime - b.startTime);
+  }, [state.entries, startDate, endDate, selectedClientId]);
+
+  const handlePreviewReport = () => {
+    let processedEntries = [...filteredEntriesRaw];
+    if (groupByDate) {
+        const groups: {[key: string]: any} = {};
+        processedEntries.forEach(e => {
+            const dateKey = new Date(e.startTime).toLocaleDateString('ja-JP');
+            if (!groups[dateKey]) {
+                groups[dateKey] = {
+                    ...e,
+                    rawDescriptions: [e.description],
+                    duration: (e.endTime! - e.startTime),
+                    count: 1
+                };
+            } else {
+                groups[dateKey].duration += (e.endTime! - e.startTime);
+                groups[dateKey].rawDescriptions.push(e.description);
+                groups[dateKey].count += 1;
+            }
+        });
+        processedEntries = Object.values(groups).map((g: any) => ({
+            ...g,
+            description: Array.from(new Set(g.rawDescriptions.filter(Boolean))).join(' / ') || '作業一式',
+        })).sort((a: any, b: any) => a.startTime - b.startTime);
+    }
+    const totalHours = processedEntries.reduce((acc, curr) => acc + (groupByDate ? (curr.duration / 3600000) : ((curr.endTime! - curr.startTime) / 3600000)), 0);
+    const client = state.clients.find(c => c.id === selectedClientId);
+
+    // 期間内の月次固定報酬を取得
+    const sDateObj = new Date(startDate);
+    const eDateObj = new Date(endDate);
+    const monthsInRange: string[] = [];
+    let currentDate = new Date(sDateObj.getFullYear(), sDateObj.getMonth(), 1);
+    while (currentDate <= eDateObj) {
+        const ym = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+        monthsInRange.push(ym);
+        currentDate.setMonth(currentDate.getMonth() + 1);
+    }
+    const fixedFeeForPeriod = state.monthlyFixedFees
+        .filter(f => f.clientId === selectedClientId && monthsInRange.includes(f.yearMonth))
+        .reduce((sum, f) => sum + f.amount, 0);
+
+    // 時給ベースの売上計算
+    let hourlyRevenue = 0;
+    if (client?.defaultHourlyRate) {
+        hourlyRevenue = totalHours * client.defaultHourlyRate;
+    }
+
+    setPreviewData({
+        clientName: client?.name || 'クライアント',
+        periodStart: startDate,
+        periodEnd: endDate,
+        count: processedEntries.length,
+        totalHours,
+        entries: processedEntries,
+        hourlyRate: client?.defaultHourlyRate || 0,
+        hourlyRevenue,
+        fixedFee: fixedFeeForPeriod,
+        totalRevenue: hourlyRevenue + fixedFeeForPeriod,
+        options: {
+            title: reportTitle,
+            businessName: reportBusinessName,
+            userName: customUserName,
+            issueDate: issueDate,
+            groupByDate,
+            showTimeRange,
+            showDuration,
+            showTotalHoursOnly
+        }
+    });
+    setShowPreview(true);
+  };
+
+  const handleDownloadPDF = () => {
+     const printWindow = window.open('', '_blank');
+     if (!printWindow) {
+         alert('ポップアップがブロックされました。ダウンロードを許可してください。');
+         return;
+     }
+     const content = document.getElementById('printable-content');
+     if (!content) return;
+     printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>${previewData?.options?.title || 'Report'}</title>
+            <style>
+               @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap');
+               body { background: white; margin: 0; padding: 20px; font-family: "Noto Sans JP", sans-serif; color: #000; font-size: 10pt; }
+               .font-bold { font-weight: 700; }
+               .text-right { text-align: right; }
+               .text-center { text-align: center; }
+               .flex { display: flex; }
+               .justify-between { justify-content: space-between; }
+               .items-end { align-items: flex-end; }
+               .items-center { align-items: center; }
+               .w-full { width: 100%; }
+               .mb-1 { margin-bottom: 0.25rem; }
+               .mb-2 { margin-bottom: 0.5rem; }
+               .mb-4 { margin-bottom: 1rem; }
+               .mb-8 { margin-bottom: 2rem; }
+               .pb-2 { padding-bottom: 0.5rem; }
+               .pb-4 { padding-bottom: 1rem; }
+               .mt-2 { margin-top: 0.5rem; }
+               .mt-8 { margin-top: 2rem; }
+               .border-b { border-bottom: 1px solid #e5e7eb; }
+               .border-b-2 { border-bottom: 2px solid #000; }
+               .border-black { border-color: #000; }
+               .text-2xl { font-size: 1.5rem; line-height: 2rem; }
+               .text-lg { font-size: 1.125rem; line-height: 1.75rem; }
+               .text-sm { font-size: 0.875rem; }
+               .text-xs { font-size: 0.75rem; }
+               .text-gray-500 { color: #6b7280; }
+               .bg-gray-50 { background-color: #f9fafb; }
+               .p-4 { padding: 1rem; }
+               .rounded-lg { border-radius: 0.5rem; }
+               .border { border: 1px solid #e5e7eb; }
+               .table-row { display: flex; padding: 6px 0; border-bottom: 1px dashed #ddd; break-inside: avoid; }
+               .table-header { display: flex; border-bottom: 1px solid #aaa; padding-bottom: 4px; font-weight: bold; font-size: 9pt; color: #555; text-transform: uppercase; }
+               .col-date { width: 100px; flex-shrink: 0; font-family: monospace; }
+               .col-time { width: 90px; flex-shrink: 0; font-family: monospace; font-size: 8pt; color: #555; }
+               .col-desc { flex: 1; padding: 0 8px; }
+               .col-dur { width: 60px; text-align: right; font-family: monospace; font-weight: bold; }
+               .no-print { display: none; }
+               @media print { @page { margin: 15mm; } body { padding: 0; } .no-print { display: none !important; } }
+            </style>
+          </head>
+          <body>
+            ${content.innerHTML}
+            <script>setTimeout(() => { window.print(); }, 500);</script>
+          </body>
+        </html>
+     `);
+     printWindow.document.close();
+  };
+
+  const handleExportCSV = () => {
+    exportToCSV(state, new Date(startDate), new Date(endDate + 'T23:59:59'));
+  };
+
+  return (
+    <div className="space-y-6 animate-fade-in pb-20">
+      <h2 className="text-lg font-black text-slate-800 ml-1">報告書作成</h2>
+      <Card className="!rounded-3xl shadow-sm space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                  <label className="text-[10px] font-black text-slate-400 ml-1 mb-2 block uppercase tracking-widest">対象期間</label>
+                  <div className="flex items-center gap-2 mb-2">
+                      <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="!text-xs font-bold" />
+                      <span className="text-slate-300">~</span>
+                      <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="!text-xs font-bold" />
+                  </div>
+                  <div className="flex gap-2">
+                      <button onClick={() => handleSetDateRange('thisMonth')} className="px-3 py-1.5 rounded-lg bg-slate-100 text-[10px] font-bold text-slate-600 hover:bg-slate-200">今月</button>
+                      <button onClick={() => handleSetDateRange('lastMonth')} className="px-3 py-1.5 rounded-lg bg-slate-100 text-[10px] font-bold text-slate-600 hover:bg-slate-200">先月</button>
+                  </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 ml-1 mb-2 block uppercase tracking-widest">対象クライアント</label>
+                <Select value={selectedClientId} onChange={e => setSelectedClientId(e.target.value)} className="!rounded-xl border-slate-200">
+                    {state.clients.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                    {state.clients.length === 0 && <option value="" disabled>クライアントがいません</option>}
+                </Select>
+              </div>
+          </div>
+          <div className="border-t border-slate-100 pt-4">
+             <label className="text-[10px] font-black text-slate-400 ml-1 mb-3 block uppercase tracking-widest flex items-center gap-2">
+                 <FileText size={12}/> 書類設定
+             </label>
+             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                 <div>
+                    <label className="text-[10px] font-bold text-slate-400 mb-1 block">タイトル</label>
+                    <Input value={reportTitle} onChange={e => setReportTitle(e.target.value)} placeholder="例: 作業報告書" />
+                 </div>
+                 <div>
+                    <label className="text-[10px] font-bold text-slate-400 mb-1 block">発行者名</label>
+                    <Input value={customUserName} onChange={e => setCustomUserName(e.target.value)} placeholder="氏名を入力" />
+                 </div>
+                 <div>
+                    <label className="text-[10px] font-bold text-slate-400 mb-1 block">報告日</label>
+                    <Input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} className="!text-xs font-bold" />
+                 </div>
+             </div>
+             <div className="mb-4">
+                <label className="text-[10px] font-bold text-slate-400 mb-1 block">業務名・件名 (任意)</label>
+                <Input value={reportBusinessName} onChange={e => setReportBusinessName(e.target.value)} placeholder="例: 〇〇開発案件、事務サポート業務" />
+             </div>
+          </div>
+          <div className="border-t border-slate-100 pt-4">
+             <label className="text-[10px] font-black text-slate-400 ml-1 mb-3 block uppercase tracking-widest flex items-center gap-2">
+                 <LayoutList size={12}/> 明細オプション
+             </label>
+             <div className="space-y-3">
+                 <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl">
+                    <div className="flex items-center gap-2">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${groupByDate ? 'bg-slate-800 text-white' : 'bg-slate-200 text-slate-500'}`}>
+                            <Calendar size={16} />
+                        </div>
+                        <div>
+                            <div className="text-xs font-bold text-slate-700">同日の作業をまとめる</div>
+                            <div className="text-[9px] text-slate-400">同じ日の明細を1行に合算します</div>
+                        </div>
+                    </div>
+                    <button onClick={() => setGroupByDate(!groupByDate)} className={`w-10 h-6 rounded-full relative transition-colors ${groupByDate ? 'bg-slate-800' : 'bg-slate-200'}`}>
+                         <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow-sm transition-all ${groupByDate ? 'left-5' : 'left-1'}`}></div>
+                    </button>
+                 </div>
+                 <div className="bg-slate-50 p-3 rounded-xl">
+                     <div className="text-[10px] font-bold text-slate-400 mb-2">日報に表示する項目</div>
+                     <div className="grid grid-cols-2 gap-2">
+                         <label className="flex items-center gap-2 cursor-pointer">
+                             <div className={`w-4 h-4 rounded border flex items-center justify-center ${showTimeRange ? 'bg-slate-800 border-slate-800' : 'bg-white border-slate-300'}`}>
+                                 {showTimeRange && <Check size={10} className="text-white" />}
+                             </div>
+                             <input type="checkbox" className="hidden" checked={showTimeRange} onChange={e => setShowTimeRange(e.target.checked)} />
+                             <span className="text-xs font-bold text-slate-700">開始・終了時刻</span>
+                         </label>
+                         <label className="flex items-center gap-2 cursor-pointer">
+                             <div className={`w-4 h-4 rounded border flex items-center justify-center ${showDuration ? 'bg-slate-800 border-slate-800' : 'bg-white border-slate-300'}`}>
+                                 {showDuration && <Check size={10} className="text-white" />}
+                             </div>
+                             <input type="checkbox" className="hidden" checked={showDuration} onChange={e => setShowDuration(e.target.checked)} />
+                             <span className="text-xs font-bold text-slate-700">所要時間</span>
+                         </label>
+                         <label className="flex items-center gap-2 cursor-pointer col-span-2 mt-1">
+                             <div className={`w-4 h-4 rounded border flex items-center justify-center ${showTotalHoursOnly ? 'bg-slate-800 border-slate-800' : 'bg-white border-slate-300'}`}>
+                                 {showTotalHoursOnly && <Check size={10} className="text-white" />}
+                             </div>
+                             <input type="checkbox" className="hidden" checked={showTotalHoursOnly} onChange={e => setShowTotalHoursOnly(e.target.checked)} />
+                             <span className="text-xs font-bold text-slate-700">合計時間を記載する</span>
+                         </label>
+                     </div>
+                 </div>
+             </div>
+          </div>
+          <div className="pt-2 space-y-3">
+              <Button onClick={handlePreviewReport} disabled={!selectedClientId} className="w-full h-12 rounded-2xl theme-bg contrast-text border-none font-black">
+                  <Eye size={18} /> プレビューしてPDF作成
+              </Button>
+              <Button onClick={handleExportCSV} variant="secondary" className="w-full h-12 rounded-2xl">
+                  <Download size={18} /> CSVデータ出力
+              </Button>
+          </div>
+      </Card>
+      <div className="mt-8">
+          <h3 className="text-xs font-black text-slate-400 ml-1 mb-3 uppercase tracking-widest">対象期間の作業一覧 (タップして編集)</h3>
+          {filteredEntriesRaw.length > 0 ? (
+              <div className="bg-white rounded-3xl overflow-hidden shadow-sm">
+                  {filteredEntriesRaw.map((e, i) => (
+                      <div key={e.id} onClick={() => setEditingEntry(e)} className={`flex items-center justify-between p-4 cursor-pointer hover:bg-slate-50 transition-colors ${i !== filteredEntriesRaw.length - 1 ? 'border-b border-slate-100' : ''}`}>
+                          <div className="flex-1 min-w-0">
+                              <div className="text-[10px] text-slate-400 font-bold mb-0.5">
+                                  {new Date(e.startTime).toLocaleDateString('ja-JP')} <span className="text-slate-300">|</span> {new Date(e.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} - {e.endTime ? new Date(e.endTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '...'}
+                              </div>
+                              <div className="text-sm font-bold text-slate-800 truncate">{e.description || '(内容未設定)'}</div>
+                          </div>
+                          <div className="text-right pl-4">
+                              <div className="text-sm font-black text-slate-700">
+                                  {((e.endTime ? (e.endTime - e.startTime) : 0) / 3600000).toFixed(2)}h
+                              </div>
+                          </div>
+                      </div>
+                  ))}
+              </div>
+          ) : (
+              <div className="text-center py-8 bg-slate-50 rounded-3xl border border-dashed border-slate-200 text-slate-400 text-xs font-bold">対象期間に履歴がありません</div>
+          )}
+      </div>
+      <EditEntryDrawer isOpen={!!editingEntry} onClose={() => setEditingEntry(null)} entry={editingEntry} clients={state.clients} onSave={(id, updates) => dispatch({type: 'UPDATE_ENTRY', payload: {id, ...updates}})} onDelete={(id) => dispatch({type: 'DELETE_ENTRY', payload: id})} />
+      {showPreview && previewData && (
+         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+            <div className="bg-white w-full max-w-2xl max-h-[90vh] rounded-xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+                <div className="p-4 border-b flex justify-between items-center bg-slate-50">
+                    <h3 className="font-bold text-slate-700 flex items-center gap-2"><FileText size={18} /> プレビュー</h3>
+                    <button onClick={() => setShowPreview(false)} className="p-1 rounded-full hover:bg-slate-200 transition-colors"><X size={20} className="text-slate-500" /></button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-8 bg-slate-100">
+                    <div id="printable-content" className="bg-white p-12 shadow-sm mx-auto max-w-[210mm] min-h-[297mm] text-black relative">
+                        <div className="border-b-2 border-black pb-4 mb-8 flex justify-between items-end">
+                            <div>
+                                <h1 className="text-2xl font-bold tracking-tight mb-1 text-black">{previewData.options.title}</h1>
+                                {previewData.options.businessName && <div className="text-sm font-bold text-gray-700 mb-1">{previewData.options.businessName}</div>}
+                                <div className="text-xs text-gray-500">{new Date(previewData.options.issueDate).toLocaleDateString('ja-JP', {year: 'numeric', month: 'long', day: 'numeric'})}</div>
+                            </div>
+                            <div className="text-right"><div className="text-lg font-bold text-black">{previewData.options.userName}</div></div>
+                        </div>
+                        <div className="flex justify-between mb-8">
+                             <div className="bg-gray-50 p-4 rounded-lg w-[48%] border border-gray-100">
+                                <div className="text-[10px] font-bold text-gray-500 uppercase">宛先</div>
+                                <div className="text-lg font-bold mt-1 text-black">{previewData.clientName} 御中</div>
+                             </div>
+                             <div className="bg-gray-50 p-4 rounded-lg w-[48%] border border-gray-100">
+                                <div className="text-[10px] font-bold text-gray-500 uppercase">対象期間</div>
+                                <div className="text-sm font-bold mt-2 text-black">{new Date(previewData.periodStart).toLocaleDateString('ja-JP')} 〜 {new Date(previewData.periodEnd).toLocaleDateString('ja-JP')}</div>
+                             </div>
+                        </div>
+                        {previewData.options.showTotalHoursOnly && (
+                            <div className="mb-8">
+                                <div className="flex justify-between items-center border-b border-gray-300 pb-3">
+                                   <div className="font-bold text-black text-lg">稼働時間合計</div>
+                                   <div className="text-right text-black text-lg font-bold">{previewData.totalHours.toFixed(2)} h</div>
+                                </div>
+                                {(previewData.hourlyRevenue > 0 || previewData.fixedFee > 0) && (
+                                    <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                                        {previewData.hourlyRevenue > 0 && (
+                                            <div className="flex justify-between items-center text-sm mb-2">
+                                                <div className="text-gray-600">時給報酬 ({previewData.totalHours.toFixed(2)}h × ¥{previewData.hourlyRate.toLocaleString()})</div>
+                                                <div className="font-bold text-black">¥{Math.floor(previewData.hourlyRevenue).toLocaleString()}</div>
+                                            </div>
+                                        )}
+                                        {previewData.fixedFee > 0 && (
+                                            <div className="flex justify-between items-center text-sm mb-2">
+                                                <div className="text-gray-600">固定報酬</div>
+                                                <div className="font-bold text-black">¥{previewData.fixedFee.toLocaleString()}</div>
+                                            </div>
+                                        )}
+                                        <div className="flex justify-between items-center pt-2 border-t border-gray-200 mt-2">
+                                            <div className="font-bold text-black">合計金額</div>
+                                            <div className="font-bold text-black text-lg">¥{Math.floor(previewData.totalRevenue).toLocaleString()}</div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                        <div className="mt-8">
+                            <h4 className="text-xs font-black text-gray-500 uppercase border-b border-gray-300 pb-2 mb-4">{previewData.options.groupByDate ? '日別作業報告' : '作業履歴詳細'}</h4>
+                            <div className="w-full">
+                                <div className="table-header">
+                                    <div className="col-date">日付</div>
+                                    {previewData.options.showTimeRange && <div className="col-time">時刻</div>}
+                                    <div className="col-desc">作業内容</div>
+                                    {previewData.options.showDuration && <div className="col-dur">時間</div>}
+                                </div>
+                                <div className="mt-2">
+                                    {previewData.entries.map((e: any, idx: number) => (
+                                        <div key={idx} className="table-row">
+                                            <div className="col-date">{new Date(e.startTime).toLocaleDateString('ja-JP')}</div>
+                                            {previewData.options.showTimeRange && (
+                                                <div className="col-time">{previewData.options.groupByDate ? '-' : `${new Date(e.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} - ${e.endTime ? new Date(e.endTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '...'}`}</div>
+                                            )}
+                                            <div className="col-desc">{e.description || '(内容未設定)'}</div>
+                                            {previewData.options.showDuration && (
+                                                <div className="col-dur">{(previewData.options.groupByDate ? (e.duration / 3600000) : ((e.endTime - e.startTime) / 3600000)).toFixed(2)} h</div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div className="p-4 border-t bg-white flex justify-end gap-3 no-print">
+                    <Button variant="secondary" onClick={() => setShowPreview(false)} className="rounded-xl">閉じる</Button>
+                    <Button onClick={handleDownloadPDF} className="theme-bg contrast-text border-none rounded-xl"><Printer size={18} /> PDF保存 (印刷画面へ)</Button>
+                </div>
+            </div>
+         </div>
+      )}
+    </div>
+  );
+};
+
+const Dashboard: React.FC<{
+  state: AppState;
+  onStartTimer: (clientId: string, description: string, rateType?: 'hourly' | 'fixed') => void;
+  onStopTimer: () => void;
+  onUpdateDescription: (id: string, description: string) => void;
+  onDeletePreset: (clientId: string, presetName: string) => void;
+}> = ({ state, onStartTimer, onStopTimer, onUpdateDescription, onDeletePreset }) => {
+    const activeEntry = state.activeEntryId ? state.entries.find(e => e.id === state.activeEntryId) : null;
+    const activeClient = activeEntry ? state.clients.find(c => c.id === activeEntry.clientId) : null;
+    const [elapsed, setElapsed] = useState(0);
+    useEffect(() => {
+        if (!activeEntry) return;
+        const interval = setInterval(() => {
+            setElapsed(Date.now() - activeEntry.startTime);
+        }, 1000);
+        setElapsed(Date.now() - activeEntry.startTime);
+        return () => clearInterval(interval);
+    }, [activeEntry]);
+
+    const [selectedClientId, setSelectedClientId] = useState(state.clients.length > 0 ? state.clients[0].id : '');
+    const [description, setDescription] = useState('');
+    const [rateType, setRateType] = useState<'hourly' | 'fixed'>('hourly');
+
+    useEffect(() => {
+        if (state.clients.length > 0 && (!selectedClientId || !state.clients.find(c => c.id === selectedClientId))) {
+            setSelectedClientId(state.clients[0].id);
+        }
+    }, [state.clients, selectedClientId]);
+
+    // クライアント変更時に報酬タイプを自動設定
+    useEffect(() => {
+        const client = state.clients.find(c => c.id === selectedClientId);
+        if (client) {
+            const hasHourly = !!client.defaultHourlyRate;
+            const hasFixed = !!client.defaultFixedFee;
+            if (hasFixed && !hasHourly) {
+                setRateType('fixed');
+            } else if (hasHourly && !hasFixed) {
+                setRateType('hourly');
+            }
+        }
+    }, [selectedClientId, state.clients]);
+
+    const handleStart = () => {
+        if (!selectedClientId) return;
+        onStartTimer(selectedClientId, description, rateType);
+        setDescription('');
+    };
+
+    const todayTotal = useMemo(() => {
+        const startOfDay = new Date();
+        startOfDay.setHours(0,0,0,0);
+        return state.entries
+            .filter(e => e.startTime >= startOfDay.getTime())
+            .reduce((acc, e) => acc + ((e.endTime || Date.now()) - e.startTime), 0);
+    }, [state.entries, elapsed]);
+
+    const monthlyStats = useMemo(() => {
+        const now = new Date();
+        const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0,0,0,0);
+        const monthlyEntries = state.entries.filter(e => e.startTime >= startOfMonth.getTime());
+        let hours = 0;
+        let revenue = 0;
+
+        // 時給ベースの収入を計算
+        monthlyEntries.forEach(e => {
+            const client = state.clients.find(c => c.id === e.clientId);
+            const duration = ((e.endTime || Date.now()) - e.startTime) / 3600000;
+            hours += duration;
+            if (client && client.defaultHourlyRate) {
+                revenue += duration * client.defaultHourlyRate;
+            }
+        });
+
+        // 月次固定報酬を加算
+        const monthlyFixedTotal = state.monthlyFixedFees
+            .filter(f => f.yearMonth === currentYearMonth)
+            .reduce((sum, f) => sum + f.amount, 0);
+        revenue += monthlyFixedTotal;
+
+        return { hours, revenue };
+    }, [state.entries, state.clients, state.monthlyFixedFees, elapsed]);
+
+    const selectedClient = state.clients.find(c => c.id === selectedClientId);
+
+    return (
+        <div className="space-y-6 animate-fade-in pb-20">
+            <div className="flex justify-between items-end mb-2 px-1">
+                <div>
+                    <h2 className="text-2xl font-black text-slate-800 tracking-tight">こんにちは、{state.settings.userName}さん</h2>
+                    <p className="text-xs font-bold text-slate-400">今日の稼働: {(todayTotal / 3600000).toFixed(2)}時間</p>
+                </div>
+                {state.settings.monthlyGoalRevenue > 0 && (
+                     <div className="text-right">
+                         <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider">目標達成率 (売上)</div>
+                         <div className="text-lg font-black text-slate-800">
+                             {Math.round((monthlyStats.revenue / state.settings.monthlyGoalRevenue) * 100)}%
+                         </div>
+                         <div className="text-[10px] font-bold text-slate-500">
+                            ¥{Math.floor(monthlyStats.revenue).toLocaleString()} / ¥{state.settings.monthlyGoalRevenue.toLocaleString()}
+                         </div>
+                     </div>
+                )}
+            </div>
+
+            <Card className="!p-1 !rounded-[32px] shadow-lg shadow-slate-200/50 overflow-visible">
+                <div className="bg-slate-900 rounded-[28px] p-6 text-white relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
+                    {activeEntry ? (
+                        <div className="relative z-10 text-center py-4">
+                            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-[10px] font-bold mb-6 border border-white/10 animate-pulse">
+                                <div className="w-1.5 h-1.5 rounded-full bg-red-500"></div>
+                                RECORDING NOW
+                            </div>
+                            <div className="mb-8">
+                                <div className="text-6xl font-black tracking-tighter tabular-nums mb-2 font-mono">{formatTimeShort(elapsed)}</div>
+                                <div className="text-lg font-bold text-slate-300">{activeClient?.name || 'Unknown Client'}</div>
+                                <div className="text-sm text-slate-400 mt-1">{activeEntry.description || '(内容未設定)'}</div>
+                            </div>
+                            <Button onClick={onStopTimer} className="w-full h-16 rounded-2xl bg-white text-slate-900 hover:bg-slate-100 font-black text-lg border-none shadow-xl shadow-black/20">
+                                <Square fill="currentColor" size={20} /> 作業を終了する
+                            </Button>
+                        </div>
+                    ) : (
+                        <div className="relative z-10">
+                             <div className="mb-6 px-1">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">CLIENT</label>
+                                <div className="relative">
+                                    <select value={selectedClientId} onChange={e => setSelectedClientId(e.target.value)} className="w-full bg-slate-800/50 text-white rounded-xl px-4 py-4 appearance-none font-bold outline-none focus:ring-2 focus:ring-slate-600 transition-all">
+                                        {state.clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                        {state.clients.length === 0 && <option value="">クライアントを追加してください</option>}
+                                    </select>
+                                    <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none rotate-90" size={16} />
+                                </div>
+                             </div>
+                             <div className="mb-4 px-1">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">TASK</label>
+                                <input type="text" value={description} onChange={e => setDescription(e.target.value)} placeholder="作業内容を入力..." className="w-full bg-slate-800/50 text-white rounded-xl px-4 py-4 font-bold outline-none focus:ring-2 focus:ring-slate-600 transition-all placeholder-slate-600" />
+                             </div>
+                             <div className="mb-6 px-1 flex items-center gap-3">
+                                <span className="text-[10px] font-bold text-slate-500">報酬:</span>
+                                <div className="flex gap-1">
+                                     <button onClick={() => setRateType('hourly')} className={`flex items-center gap-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all ${rateType === 'hourly' ? 'bg-slate-700 text-white' : 'text-slate-500 hover:bg-slate-800/50'}`}>
+                                         <Clock size={12} />
+                                         <span>時給</span>
+                                     </button>
+                                     <button onClick={() => setRateType('fixed')} className={`flex items-center gap-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all ${rateType === 'fixed' ? 'bg-slate-700 text-white' : 'text-slate-500 hover:bg-slate-800/50'}`}>
+                                         <Briefcase size={12} />
+                                         <span>固定</span>
+                                     </button>
+                                </div>
+                             </div>
+                             <Button onClick={handleStart} disabled={state.clients.length === 0} className="w-full h-16 rounded-2xl theme-bg contrast-text border-none font-black text-lg shadow-xl shadow-black/20">
+                                <Play fill="currentColor" size={20} /> 作業を開始
+                             </Button>
+                        </div>
+                    )}
+                </div>
+            </Card>
+            {selectedClient && selectedClient.taskPresets.length > 0 && !activeEntry && (
+                <div className="px-1">
+                    <h3 className="text-xs font-black text-slate-400 mb-3 uppercase tracking-widest flex items-center gap-2"><Flame size={14} className="text-orange-400" /> よく使うタスク ({selectedClient.name})</h3>
+                    <div className="flex flex-wrap gap-2">
+                        {selectedClient.taskPresets.map((preset, idx) => (
+                            <button key={`${preset}-${idx}`} onClick={() => setDescription(preset)} className="bg-white px-4 py-3 rounded-xl shadow-sm border border-slate-100 font-bold text-slate-700 text-sm hover:shadow-md hover:border-slate-200 active:scale-95 transition-all flex items-center gap-2 group">
+                                <span>{preset}</span>
+                                <span onClick={(e) => { e.stopPropagation(); onDeletePreset(selectedClient.id, preset); }} className="opacity-0 group-hover:opacity-100 hover:bg-slate-100 p-1 rounded-full transition-all"><X size={12} className="text-slate-400" /></span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+const ClientsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({ state, dispatch }) => {
+    const [isFormOpen, setIsFormOpen] = useState(false);
+    const [editingClient, setEditingClient] = useState<Client | null>(null);
+    const [name, setName] = useState('');
+    const [color, setColor] = useState(STYLISH_COLORS[0]);
+    const [hourlyRate, setHourlyRate] = useState('');
+    const [fixedFee, setFixedFee] = useState('');
+    const [closingDate, setClosingDate] = useState('99');
+
+    // 月次固定報酬管理
+    const currentYearMonth = useMemo(() => {
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }, []);
+    const [selectedYearMonth, setSelectedYearMonth] = useState(currentYearMonth);
+
+    const clientsWithFixedFee = state.clients.filter(c => c.defaultFixedFee && c.defaultFixedFee > 0);
+
+    const getMonthlyFee = (clientId: string, yearMonth: string) => {
+        return state.monthlyFixedFees.find(f => f.clientId === clientId && f.yearMonth === yearMonth);
+    };
+
+    const toggleMonthlyFee = (client: Client) => {
+        const existing = getMonthlyFee(client.id, selectedYearMonth);
+        if (existing) {
+            dispatch({ type: 'DELETE_MONTHLY_FIXED_FEE', payload: existing.id });
+        } else {
+            dispatch({
+                type: 'ADD_MONTHLY_FIXED_FEE',
+                payload: {
+                    id: `mf_${Date.now()}`,
+                    clientId: client.id,
+                    yearMonth: selectedYearMonth,
+                    amount: client.defaultFixedFee || 0
+                }
+            });
+        }
+    };
+
+    const getYearMonthOptions = () => {
+        const options = [];
+        const now = new Date();
+        for (let i = -3; i <= 3; i++) {
+            const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+            const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            const label = `${d.getFullYear()}年${d.getMonth() + 1}月`;
+            options.push({ value: ym, label });
+        }
+        return options;
+    };
+    useEffect(() => {
+        if (editingClient) {
+            setName(editingClient.name);
+            setColor(editingClient.color);
+            setHourlyRate(editingClient.defaultHourlyRate?.toString() || '');
+            setFixedFee(editingClient.defaultFixedFee?.toString() || '');
+            setClosingDate(editingClient.closingDate?.toString() || '99');
+        } else {
+            setName('');
+            setColor(getNextStylishColor(state.clients.map(c => c.color)));
+            setHourlyRate('');
+            setFixedFee('');
+            setClosingDate('99');
+        }
+    }, [editingClient, isFormOpen, state.clients]);
+    const handleSubmit = () => {
+        if (!name) return;
+        const payload = {
+            id: editingClient ? editingClient.id : `c_${Date.now()}`,
+            name,
+            color,
+            defaultHourlyRate: Number(hourlyRate),
+            defaultFixedFee: Number(fixedFee),
+            closingDate: Number(closingDate),
+            taskPresets: editingClient ? editingClient.taskPresets : []
+        };
+        if (editingClient) { dispatch({ type: 'UPDATE_CLIENT', payload }); } else { dispatch({ type: 'ADD_CLIENT', payload }); }
+        setIsFormOpen(false);
+        setEditingClient(null);
+    };
+    const handleDelete = () => {
+        if (editingClient && confirm(`「${editingClient.name}」を削除しますか？`)) {
+            dispatch({ type: 'DELETE_CLIENT', payload: editingClient.id });
+            setIsFormOpen(false);
+            setEditingClient(null);
+        }
+    };
+    return (
+        <div className="space-y-6 animate-fade-in pb-20">
+            <div className="flex justify-between items-center mb-2 px-1">
+                 <h2 className="text-lg font-black text-slate-800">クライアント管理</h2>
+                 <Button onClick={() => { setEditingClient(null); setIsFormOpen(true); }} className="!py-2 !px-4 !rounded-lg text-xs theme-bg contrast-text"><Plus size={16} /> 新規登録</Button>
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                {state.clients.map(client => (
+                    <Card key={client.id} onClick={() => { setEditingClient(client); setIsFormOpen(true); }} className="!p-4 hover:!border-slate-300 transition-all border border-transparent cursor-pointer">
+                        <div className="flex justify-between items-start mb-3">
+                            <div className="flex items-center gap-2">
+                                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-sm" style={{ backgroundColor: client.color }}>{client.name.charAt(0)}</div>
+                                <div>
+                                    <h3 className="font-bold text-slate-800 text-sm">{client.name}</h3>
+                                    <div className="text-[9px] font-bold text-slate-400">締日: {client.closingDate === 99 ? '末日' : `${client.closingDate}日`}</div>
+                                </div>
+                            </div>
+                            <div className="p-1.5 bg-slate-50 rounded-full text-slate-300"><Edit2 size={14} /></div>
+                        </div>
+                        <div className="space-y-1.5">
+                             <div className="flex justify-between items-center p-1.5 bg-slate-50 rounded-lg">
+                                 <span className="text-[9px] font-bold text-slate-500">時給</span>
+                                 <span className="text-xs font-black text-slate-700">¥{client.defaultHourlyRate?.toLocaleString() || 0}</span>
+                             </div>
+                             <div className="flex justify-between items-center p-1.5 bg-slate-50 rounded-lg">
+                                 <span className="text-[9px] font-bold text-slate-500">固定</span>
+                                 <span className="text-xs font-black text-slate-700">¥{client.defaultFixedFee?.toLocaleString() || 0}</span>
+                             </div>
+                        </div>
+                    </Card>
+                ))}
+                <button onClick={() => { setEditingClient(null); setIsFormOpen(true); }} className="border-2 border-dashed border-slate-200 rounded-2xl p-4 flex flex-col items-center justify-center gap-2 text-slate-400 hover:bg-slate-50 hover:border-slate-300 transition-all min-h-[140px]">
+                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center"><Plus size={20} /></div>
+                    <span className="text-xs font-bold">追加</span>
+                </button>
+            </div>
+
+            {clientsWithFixedFee.length > 0 && (
+                <div className="mt-8">
+                    <div className="flex justify-between items-center mb-4 px-1">
+                        <h3 className="text-lg font-black text-slate-800">月次固定報酬</h3>
+                        <select
+                            value={selectedYearMonth}
+                            onChange={e => setSelectedYearMonth(e.target.value)}
+                            className="text-sm font-bold bg-slate-100 rounded-lg px-3 py-2 outline-none"
+                        >
+                            {getYearMonthOptions().map(opt => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <Card className="!p-3">
+                        <div className="space-y-1">
+                            {clientsWithFixedFee.map(client => {
+                                const fee = getMonthlyFee(client.id, selectedYearMonth);
+                                const isEnabled = !!fee;
+                                return (
+                                    <div key={client.id} className="flex items-center justify-between py-2 px-2 bg-slate-50 rounded-lg">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-6 h-6 rounded flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: client.color }}>
+                                                {client.name.charAt(0)}
+                                            </div>
+                                            <span className="text-xs font-bold text-slate-700">{client.name}</span>
+                                            <span className="text-[10px] text-slate-400">¥{client.defaultFixedFee?.toLocaleString()}</span>
+                                        </div>
+                                        <button
+                                            onClick={() => toggleMonthlyFee(client)}
+                                            className={`w-10 h-5 rounded-full transition-colors relative ${isEnabled ? 'theme-bg' : 'bg-slate-200'}`}
+                                        >
+                                            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${isEnabled ? 'left-5' : 'left-0.5'}`}></div>
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        <div className="mt-3 pt-3 border-t border-slate-100 flex justify-between items-center">
+                            <span className="text-xs font-bold text-slate-500">合計</span>
+                            <span className="text-sm font-black text-slate-800">
+                                ¥{state.monthlyFixedFees
+                                    .filter(f => f.yearMonth === selectedYearMonth)
+                                    .reduce((sum, f) => sum + f.amount, 0)
+                                    .toLocaleString()}
+                            </span>
+                        </div>
+                    </Card>
+                </div>
+            )}
+
+            {isFormOpen && (
+                 <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-300">
+                    <div className="bg-white w-full max-w-md rounded-t-[40px] p-8 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[90vh] overflow-y-auto">
+                        <div className="w-12 h-1 bg-slate-100 rounded-full mx-auto mb-6"></div>
+                        <div className="flex justify-between items-center mb-8"><h3 className="text-xl font-black text-slate-800">{editingClient ? 'クライアント編集' : '新規クライアント'}</h3>{editingClient && (<button onClick={handleDelete} className="p-2 text-red-500 bg-red-50 rounded-full hover:bg-red-100 transition-colors"><Trash2 size={20} /></button>)}</div>
+                        <div className="space-y-6 mb-8">
+                            <div><label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">クライアント名</label><Input value={name} onChange={e => setName(e.target.value)} placeholder="会社名や個人名" className="!h-14 font-bold" /></div>
+                            <div>
+                                <label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">テーマカラー</label>
+                                <div className="flex flex-wrap gap-3 items-center">
+                                    {STYLISH_COLORS.slice(0, 10).map(c => (<button key={c} type="button" onClick={() => setColor(c)} className={`w-8 h-8 rounded-full transition-all ${color === c ? 'ring-4 ring-slate-200 scale-110' : 'opacity-60 hover:opacity-100'}`} style={{ backgroundColor: c }} />))}
+                                    {/* Custom Color Input */}
+                                    <div className={`relative w-8 h-8 rounded-full overflow-hidden border border-slate-200 shadow-sm flex items-center justify-center transition-all ${!STYLISH_COLORS.slice(0, 10).includes(color) ? 'ring-4 ring-slate-200 scale-110' : 'opacity-60 hover:opacity-100'}`} style={{ backgroundColor: color }}>
+                                         <input 
+                                            type="color" 
+                                            value={color.startsWith('#') ? color : '#4A6FA5'} 
+                                            onChange={(e) => setColor(e.target.value)}
+                                            className="absolute inset-[-5px] w-[150%] h-[150%] cursor-pointer"
+                                         />
+                                         <div className="absolute inset-0 pointer-events-none flex items-center justify-center bg-black/10">
+                                            <Palette size={12} className="text-white drop-shadow-sm" />
+                                         </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div><label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">基本時給 (¥)</label><Input type="number" value={hourlyRate} onChange={e => setHourlyRate(e.target.value)} placeholder="0" className="!h-12 font-bold" /></div>
+                                <div><label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">固定報酬 (¥)</label><Input type="number" value={fixedFee} onChange={e => setFixedFee(e.target.value)} placeholder="0" className="!h-12 font-bold" /></div>
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">締日設定</label>
+                                <div className="space-y-3">
+                                    <div className="grid grid-cols-4 gap-2">
+                                        {[99, 15, 20, 25].map(d => (<button key={d} type="button" onClick={() => setClosingDate(d.toString())} className={`py-3 rounded-xl text-xs font-bold transition-all ${closingDate === d.toString() ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-500'}`}>{d === 99 ? '末日' : `${d}日`}</button>))}
+                                    </div>
+                                    <div className="flex items-center gap-2 bg-slate-50 rounded-xl px-4 py-3 border border-transparent focus-within:border-slate-200 transition-all">
+                                        <span className="text-[10px] font-bold text-slate-400 shrink-0">自由入力:</span>
+                                        <input 
+                                            type="number" 
+                                            min="1" 
+                                            max="31" 
+                                            value={closingDate === '99' ? '' : closingDate} 
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                if (val === '') return setClosingDate('99');
+                                                const n = parseInt(val);
+                                                if (!isNaN(n) && n >= 1 && n <= 31) setClosingDate(n.toString());
+                                            }}
+                                            placeholder="1〜31"
+                                            className="bg-transparent w-full text-sm font-bold outline-none text-slate-700"
+                                        />
+                                        <span className="text-[10px] font-bold text-slate-400">日</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="flex gap-3"><Button onClick={() => setIsFormOpen(false)} variant="secondary" className="flex-1 h-14 rounded-2xl">キャンセル</Button><Button onClick={handleSubmit} className="flex-[2] theme-bg contrast-text border-none font-black h-14 rounded-2xl">保存する</Button></div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+// --- Main Layout Component ---
+const AppLayout: React.FC = () => {
+  const [state, setState] = useState<AppState>(loadState);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [floatingElapsed, setFloatingElapsed] = useState(0);
+  const [isPiPActive, setIsPiPActive] = useState(false);
+  const pipWindowRef = useRef<Window | null>(null);
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const activeEntry = state.activeEntryId ? state.entries.find(e => e.id === state.activeEntryId) : null;
+  const activeClientName = activeEntry ? state.clients.find(c => c.id === activeEntry.clientId)?.name || '' : '';
+
+  useEffect(() => {
+    if (!activeEntry) {
+      setFloatingElapsed(0);
+      if (pipWindowRef.current) {
+        pipWindowRef.current.close();
+        pipWindowRef.current = null;
+        setIsPiPActive(false);
+      }
+      return;
+    }
+    const interval = setInterval(() => {
+      setFloatingElapsed(Date.now() - activeEntry.startTime);
+    }, 1000);
+    setFloatingElapsed(Date.now() - activeEntry.startTime);
+    return () => clearInterval(interval);
+  }, [activeEntry]);
+
+  // PiPウィンドウ内のタイマー更新
+  useEffect(() => {
+    if (!isPiPActive || !pipWindowRef.current || !activeEntry) return;
+
+    const updatePiPContent = () => {
+      if (!pipWindowRef.current) return;
+      const timeEl = pipWindowRef.current.document.getElementById('pip-time');
+      if (timeEl) {
+        timeEl.textContent = formatTimeShort(Date.now() - activeEntry.startTime);
+      }
+    };
+
+    const interval = setInterval(updatePiPContent, 1000);
+    updatePiPContent();
+
+    return () => clearInterval(interval);
+  }, [isPiPActive, activeEntry]);
+
+  const handleTogglePiP = async () => {
+    if (!('documentPictureInPicture' in window)) {
+      alert('お使いのブラウザはPicture-in-Picture機能に対応していません。Chrome または Edge の最新版をお試しください。');
+      return;
+    }
+
+    if (isPiPActive && pipWindowRef.current) {
+      pipWindowRef.current.close();
+      pipWindowRef.current = null;
+      setIsPiPActive(false);
+      return;
+    }
+
+    try {
+      const pipWindow = await (window as any).documentPictureInPicture.requestWindow({
+        width: 320,
+        height: 120,
+      });
+
+      pipWindowRef.current = pipWindow;
+
+      const style = pipWindow.document.createElement('style');
+      style.textContent = `
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          background: #334155;
+          color: white;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          height: 100vh;
+          padding: 12px;
+          user-select: none;
+        }
+        .container {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          width: 100%;
+        }
+        .indicator {
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+          background: #ef4444;
+          animation: pulse 2s infinite;
+          box-shadow: 0 0 8px rgba(239,68,68,0.6);
+          flex-shrink: 0;
+        }
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+        .info {
+          flex: 1;
+          min-width: 0;
+          overflow: hidden;
+        }
+        .label {
+          font-size: 10px;
+          color: #94a3b8;
+          font-weight: bold;
+          margin-bottom: 2px;
+        }
+        .client {
+          font-size: 14px;
+          font-weight: bold;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .time {
+          font-family: ui-monospace, monospace;
+          font-size: 20px;
+          font-weight: bold;
+          color: #e2e8f0;
+          flex-shrink: 0;
+        }
+        .stop-btn {
+          background: #1e293b;
+          border: 1px solid #475569;
+          color: white;
+          padding: 8px 16px;
+          border-radius: 9999px;
+          font-size: 12px;
+          font-weight: bold;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          transition: background 0.2s;
+          flex-shrink: 0;
+        }
+        .stop-btn:hover { background: #0f172a; }
+        .stop-btn:active { transform: scale(0.95); }
+        .stop-icon {
+          width: 8px;
+          height: 8px;
+          background: currentColor;
+        }
+      `;
+      pipWindow.document.head.appendChild(style);
+
+      pipWindow.document.body.innerHTML = `
+        <div class="container">
+          <div class="indicator"></div>
+          <div class="info">
+            <div class="label">計測中</div>
+            <div class="client">${activeClientName || '作業中'}</div>
+          </div>
+          <div class="time" id="pip-time">${formatTimeShort(floatingElapsed)}</div>
+          <button class="stop-btn" id="pip-stop">
+            <div class="stop-icon"></div>
+            停止
+          </button>
+        </div>
+      `;
+
+      const stopBtn = pipWindow.document.getElementById('pip-stop');
+      if (stopBtn) {
+        stopBtn.addEventListener('click', () => {
+          dispatch({ type: 'STOP_TIMER' });
+          pipWindow.close();
+        });
+      }
+
+      pipWindow.addEventListener('pagehide', () => {
+        pipWindowRef.current = null;
+        setIsPiPActive(false);
+      });
+
+      setIsPiPActive(true);
+    } catch (error) {
+      console.error('PiP error:', error);
+      alert('ピクチャーインピクチャーの起動に失敗しました。');
+    }
+  };
+
+  const dispatch = (action: { type: string; payload?: any }) => {
+    setState(prev => {
+        let newState = { ...prev };
+        switch (action.type) {
+            case 'START_TIMER':
+                const newEntry: TimeEntry = {
+                    id: `e_${Date.now()}`,
+                    clientId: action.payload.clientId,
+                    startTime: Date.now(),
+                    endTime: null,
+                    description: action.payload.description || '', 
+                    rateType: action.payload.rateType
+                };
+                newState.entries = [...prev.entries, newEntry];
+                newState.activeEntryId = newEntry.id;
+                if (action.payload.description) {
+                  newState.clients = prev.clients.map(c => {
+                    if (c.id === action.payload.clientId && !c.taskPresets.includes(action.payload.description)) {
+                      return { ...c, taskPresets: [action.payload.description, ...c.taskPresets].slice(0, 20) };
+                    }
+                    return c;
+                  });
+                }
+                break;
+            case 'STOP_TIMER':
+                if (prev.activeEntryId) {
+                    newState.entries = prev.entries.map(e => e.id === prev.activeEntryId ? { ...e, endTime: Date.now() } : e);
+                    newState.activeEntryId = null;
+                }
+                break;
+            case 'UPDATE_ENTRY':
+                newState.entries = prev.entries.map(e => e.id === action.payload.id ? { ...action.payload } : e);
+                const ent = action.payload as TimeEntry;
+                if(ent.description && ent.clientId) {
+                    newState.clients = newState.clients.map(c => {
+                      if (c.id === ent.clientId && ent.description && !c.taskPresets.includes(ent.description)) {
+                        return { ...c, taskPresets: [ent.description, ...c.taskPresets].slice(0, 20) };
+                      }
+                      return c;
+                    });
+                }
+                break;
+            case 'DELETE_ENTRY':
+                newState.entries = prev.entries.filter(e => e.id !== action.payload);
+                if (prev.activeEntryId === action.payload) newState.activeEntryId = null;
+                break;
+            case 'ADD_CLIENT': newState.clients = [...prev.clients, action.payload]; break;
+            case 'UPDATE_CLIENT': newState.clients = prev.clients.map(c => c.id === action.payload.id ? action.payload : c); break;
+            case 'DELETE_CLIENT': newState.clients = prev.clients.filter(c => c.id !== action.payload); break;
+            case 'DELETE_CLIENT_PRESET': 
+                newState.clients = prev.clients.map(c => {
+                    if (c.id === action.payload.clientId) { return { ...c, taskPresets: c.taskPresets.filter(p => p !== action.payload.presetName) }; }
+                    return c;
+                });
+                break;
+            case 'UPDATE_THEME': newState.settings = { ...prev.settings, themeColor: action.payload }; break;
+            case 'UPDATE_GOALS': newState.settings = { ...prev.settings, ...action.payload }; break;
+            case 'CLEAR_CLIENT_PRESETS': newState.clients = prev.clients.map(c => c.id === action.payload ? { ...c, taskPresets: [] } : c); break;
+            case 'ADD_MONTHLY_FIXED_FEE':
+                newState.monthlyFixedFees = [...prev.monthlyFixedFees, action.payload];
+                break;
+            case 'UPDATE_MONTHLY_FIXED_FEE':
+                newState.monthlyFixedFees = prev.monthlyFixedFees.map(f => f.id === action.payload.id ? action.payload : f);
+                break;
+            case 'DELETE_MONTHLY_FIXED_FEE':
+                newState.monthlyFixedFees = prev.monthlyFixedFees.filter(f => f.id !== action.payload);
+                break;
+        }
+        saveState(newState);
+        return newState;
+    });
+  };
+
+  const themeColors = [
+    { name: 'Peach Coral', value: '#fc9f97' },
+    { name: 'Vibrant Orange', value: '#f97316' },
+    { name: 'Gold', value: '#FFD700' },
+    { name: 'Mint Green', value: '#4ade80' },
+    { name: 'Emerald Green', value: '#10b981' },
+    { name: 'Clean Azure', value: '#0ea5e9' },
+    { name: 'Lavender', value: '#ca9fdb' },
+    { name: 'Sunset', value: 'linear-gradient(135deg, #fc9f97 0%, #f685b3 100%)' },
+    { name: 'JShine', value: 'linear-gradient(to right, #12c2e9, #c471ed, #f64f59)' },
+    { name: 'Dark Ocean', value: 'linear-gradient(to right, #373b44, #4286f4)' },
+    { name: 'Moonlit Asteroid', value: 'linear-gradient(to right, #0F2027, #203A43, #2C5364)' },
+  ];
+
+  return (
+    <ThemeProvider color={state.settings.themeColor}>
+      <div className="min-h-screen bg-[#F8F9FA] flex text-slate-800 font-sans">
+        <aside className="hidden md:flex flex-col w-64 bg-white border-r border-slate-100 fixed h-full z-50">
+           <div className="p-6 theme-bg mb-6 flex items-center justify-center gap-2"><Briefcase size={22} strokeWidth={2.5} className="contrast-text" /><h1 className="font-black text-2xl tracking-tighter contrast-text">Logmee</h1></div>
+           <nav className="flex-1 px-4 space-y-2">
+              <DesktopNavItem to="/" icon={<Clock />} label="タイマー" active={location.pathname === '/'} />
+              <DesktopNavItem to="/logs" icon={<History />} label="稼働履歴" active={location.pathname === '/logs'} />
+              <DesktopNavItem to="/reports" icon={<FileText />} label="報告書" active={location.pathname === '/reports'} />
+              <DesktopNavItem to="/clients" icon={<Users />} label="クライアント管理" active={location.pathname === '/clients'} />
+              <DesktopNavItem to="/analytics" icon={<BarChart2 />} label="データ分析" active={location.pathname === '/analytics'} />
+              <DesktopNavItem to="/usage" icon={<HelpCircle />} label="使い方" active={location.pathname === '/usage'} />
+           </nav>
+           <div className="p-4 border-t border-slate-100"><button onClick={() => setIsSettingsOpen(true)} className="flex items-center gap-3 w-full px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl transition-colors font-bold"><Settings size={20} /><span>設定</span></button></div>
+        </aside>
+        <div className="flex-1 md:ml-64 flex flex-col min-h-screen relative">
+            <header className="md:hidden theme-bg p-4 flex justify-between items-center sticky top-0 z-50 shadow-sm" style={{ background: state.settings.themeColor.includes('gradient') ? state.settings.themeColor : undefined }}>
+                <div className="flex items-center gap-2"><div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/30 shadow-sm contrast-text"><Briefcase size={22} strokeWidth={2.5} fill="none" /></div><h1 className="font-black text-2xl tracking-tighter contrast-text">Logmee</h1></div>
+                <div className="flex items-center gap-2"><button onClick={() => setIsSettingsOpen(true)} className="p-2.5 bg-white/20 rounded-full hover:bg-white/30 transition-colors contrast-text"><Settings size={20} fill="none" strokeWidth={2} /></button></div>
+            </header>
+            <div className="hidden md:block h-8"></div>
+            <main className="p-4 md:p-8 max-w-6xl w-full mx-auto pb-24 md:pb-8">
+                <Routes>
+                    <Route path="/" element={<Dashboard state={state} onStartTimer={(clientId, description, rateType) => dispatch({type:'START_TIMER', payload:{clientId, description, rateType}})} onStopTimer={() => dispatch({type:'STOP_TIMER'})} onUpdateDescription={(id, description) => { const entry = state.entries.find(e => e.id === id); if (entry) dispatch({type:'UPDATE_ENTRY', payload:{...entry, description}}); }} onDeletePreset={(clientId, presetName) => dispatch({type: 'DELETE_CLIENT_PRESET', payload: {clientId, presetName}})} />} />
+                    <Route path="/clients" element={<ClientsPage state={state} dispatch={dispatch} />} />
+                    <Route path="/logs" element={<LogsPage state={state} dispatch={dispatch} />} />
+                    <Route path="/reports" element={<ReportPage state={state} dispatch={dispatch} />} />
+                    <Route path="/analytics" element={<AnalyticsPage state={state} />} />
+                    <Route path="/usage" element={<UsagePage />} />
+                    <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+            </main>
+            <nav className="md:hidden bg-white border-t border-slate-100 flex items-center px-4 pb-safe fixed bottom-0 z-50 h-16 w-full shadow-[0_-5px_20px_rgba(0,0,0,0.02)]">
+                <MobileNavItem to="/" icon={<Clock />} label="タイマー" active={location.pathname === '/'} />
+                <MobileNavItem to="/logs" icon={<History />} label="履歴" active={location.pathname === '/logs'} />
+                <MobileNavItem to="/reports" icon={<FileText />} label="報告書" active={location.pathname === '/reports'} />
+                <MobileNavItem to="/clients" icon={<Users />} label="管理" active={location.pathname === '/clients'} />
+                <MobileNavItem to="/analytics" icon={<BarChart2 />} label="分析" active={location.pathname === '/analytics'} />
+            </nav>
+        </div>
+        {state.activeEntryId && (<DraggableTimer activeClientName={activeClientName} onStop={() => dispatch({type:'STOP_TIMER'})} elapsedTime={formatTimeShort(floatingElapsed)} onTogglePiP={handleTogglePiP} isPiPActive={isPiPActive} />)}
+        {isSettingsOpen && (
+          <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-300">
+             <div className="bg-white w-full max-w-md rounded-t-[45px] p-8 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[90vh] overflow-y-auto">
+                <div className="w-12 h-1.5 bg-slate-100 rounded-full mx-auto mb-6"></div>
+                <div className="flex justify-between items-center mb-8"><h3 className="text-2xl font-black text-slate-800 tracking-tight">設定</h3><button onClick={() => setIsSettingsOpen(false)} className="p-2 bg-slate-50 rounded-full text-slate-400 active:scale-90 transition-all"><X size={24} fill="none" strokeWidth={2.5} /></button></div>
+                <div className="mb-4"><label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">ユーザー設定</label><div className="p-4 bg-slate-50 rounded-2xl border border-slate-100"><label className="text-[8px] font-bold text-slate-400 mb-1 block">表示名 (報告書の発行者名)</label><Input value={state.settings.userName} onChange={e => dispatch({ type: 'UPDATE_GOALS', payload: { userName: e.target.value } })} className="!bg-white !p-2 !border-none !text-sm font-bold" /></div></div>
+                <div className="mb-8"><label className="text-[10px] font-black text-slate-400 block mb-4 uppercase tracking-widest">目標設定</label><div className="grid grid-cols-2 gap-4"><div className="p-4 bg-slate-50 rounded-2xl border border-slate-100"><label className="text-[8px] font-bold text-slate-400 mb-1 block">月間売上目標</label><Input type="number" value={state.settings.monthlyGoalRevenue} onChange={e => dispatch({ type: 'UPDATE_GOALS', payload: { monthlyGoalRevenue: Number(e.target.value) } })} className="!bg-white !p-0 !border-none !text-lg !font-black" /></div><div className="p-4 bg-slate-50 rounded-2xl border border-slate-100"><label className="text-[8px] font-bold text-slate-400 mb-1 block">月間稼働目標(h)</label><Input type="number" value={state.settings.monthlyGoalHours} onChange={e => dispatch({ type: 'UPDATE_GOALS', payload: { monthlyGoalHours: Number(e.target.value) } })} className="!bg-white !p-0 !border-none !text-lg !font-black" /></div></div></div>
+                <div className="mb-8"><label className="text-[10px] font-black text-slate-400 block mb-4 uppercase tracking-widest">通知設定</label><div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-slate-400 shadow-sm"><BellRing size={20}/></div><div><div className="text-xs font-black text-slate-800">ブラウザ通知</div><div className="text-[9px] text-slate-400 font-bold">長時間稼働時にアラートを表示</div></div></div><button onClick={() => { if (!state.settings.enableNotifications) { Notification.requestPermission(); } dispatch({ type: 'UPDATE_GOALS', payload: { enableNotifications: !state.settings.enableNotifications } }) }} className={`w-12 h-7 rounded-full transition-colors relative ${state.settings.enableNotifications ? 'theme-bg' : 'bg-slate-200'}`}><div className={`absolute top-1 w-5 h-5 rounded-full bg-white transition-all shadow-sm ${state.settings.enableNotifications ? 'left-6' : 'left-1'}`}></div></button></div></div>
+                <div className="mb-8"><label className="text-[10px] font-black text-slate-400 block mb-4 uppercase tracking-widest">テーマ & スタイル</label><div className="flex flex-wrap gap-4">{themeColors.map(color => (<button key={color.value} onClick={() => dispatch({ type: 'UPDATE_THEME', payload: color.value })} className={`w-12 h-12 rounded-2xl border-[3px] transition-all relative group overflow-hidden ${state.settings.themeColor === color.value ? 'border-slate-800 scale-110 shadow-lg' : 'border-transparent opacity-80'}`} style={{ background: color.value }}>{state.settings.themeColor === color.value && <div className="absolute inset-0 flex items-center justify-center text-slate-800 mix-blend-overlay"><Check size={20} strokeWidth={4} /></div>}</button>))}</div></div>
+                <div className="mb-10">
+                     <button onClick={() => { setIsSettingsOpen(false); navigate('/usage'); }} className="w-full bg-slate-100 text-slate-700 font-bold h-14 rounded-2xl flex items-center justify-center gap-2 hover:bg-slate-200 transition-colors">
+                        <BookOpen size={18} /> 使い方ガイドを見る
+                     </button>
+                </div>
+                <Button onClick={() => setIsSettingsOpen(false)} className="w-full theme-bg contrast-text border-none font-black h-16 rounded-[24px] text-lg">設定を完了</Button>
+             </div>
+          </div>
+        )}
+      </div>
+    </ThemeProvider>
+  );
+};
+
+const App: React.FC = () => {
+  return (<HashRouter><AppLayout /></HashRouter>);
+};
+
+export default App;
