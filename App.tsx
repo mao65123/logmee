@@ -1,16 +1,29 @@
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-router-dom';
-import { 
+import {
   Play, Square, Plus, Clock, Users, FileText,
-  Settings, Home, Edit2, CheckCircle, X, Calculator, BellRing, Flame, Trophy, Activity, Printer, Calendar, Eye, Download, Check, AlertTriangle, Briefcase, Trash2, Maximize2, Palette, LayoutList, History, Coins, PictureInPicture2, GripVertical, ChevronLeft, ChevronRight, BarChart2, TrendingUp, DollarSign, PieChart as PieChartIcon, HelpCircle, BookOpen, Lightbulb, MousePointerClick, ArrowRight
+  Settings, Home, Edit2, CheckCircle, X, Calculator, BellRing, Flame, Trophy, Activity, Printer, Calendar, Eye, Download, Check, AlertTriangle, Briefcase, Trash2, Maximize2, Palette, LayoutList, History, Coins, PictureInPicture2, GripVertical, ChevronLeft, ChevronRight, BarChart2, TrendingUp, DollarSign, PieChart as PieChartIcon, HelpCircle, BookOpen, Lightbulb, MousePointerClick, ArrowRight, LogOut, Cloud, CloudOff
 } from 'lucide-react';
 import { ResponsiveContainer, Cell, BarChart, Bar, XAxis, Tooltip as RechartsTooltip, PieChart, Pie, Legend } from 'recharts';
 
-import { AppState, Client, TimeEntry, MonthlyFixedFee } from './types';
+import { AppState, Client, TimeEntry, MonthlyFixedFee, Currency } from './types';
 import { loadState, saveState } from './services/storage';
 import { exportToCSV } from './services/pdfGenerator';
 import { Card, Button, Input, Select, Badge } from './components/UIComponents';
+import { LoginPage } from './components/LoginPage';
+import { useAuth } from './hooks/useAuth';
+import { useSupabaseSync } from './hooks/useSupabaseSync';
+import {
+  loadAllUserData,
+  saveClient,
+  deleteClient as deleteClientFromSupabase,
+  saveTimeEntry,
+  deleteTimeEntry as deleteEntryFromSupabase,
+  saveUserSettings,
+  saveMonthlyFixedFee,
+  deleteMonthlyFixedFee as deleteFeeFromSupabase
+} from './services/supabase';
 
 // --- Theme Style Wrapper ---
 const ThemeProvider: React.FC<{ color: string; children: React.ReactNode }> = ({ color, children }) => {
@@ -1770,13 +1783,53 @@ const ClientsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = (
 
 // --- Main Layout Component ---
 const AppLayout: React.FC = () => {
+  const { user, loading: authLoading, error: authError, signIn, signOut } = useAuth();
   const [state, setState] = useState<AppState>(loadState);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [floatingElapsed, setFloatingElapsed] = useState(0);
   const [isPiPActive, setIsPiPActive] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [dataLoaded, setDataLoaded] = useState(false);
   const pipWindowRef = useRef<Window | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Load data from Supabase when user logs in
+  useEffect(() => {
+    const loadData = async () => {
+      if (user && !dataLoaded) {
+        setIsSyncing(true);
+        try {
+          const cloudData = await loadAllUserData(user.id);
+          if (cloudData) {
+            // If cloud has data, use it
+            if (cloudData.clients.length > 0 || cloudData.entries.length > 0) {
+              setState(prev => ({
+                ...prev,
+                clients: cloudData.clients,
+                entries: cloudData.entries,
+                settings: cloudData.settings,
+                monthlyFixedFees: cloudData.monthlyFixedFees
+              }));
+            }
+          }
+          setDataLoaded(true);
+        } catch (error) {
+          console.error('Failed to load data from Supabase:', error);
+        } finally {
+          setIsSyncing(false);
+        }
+      }
+    };
+    loadData();
+  }, [user, dataLoaded]);
+
+  // Reset dataLoaded when user logs out
+  useEffect(() => {
+    if (!user) {
+      setDataLoaded(false);
+    }
+  }, [user]);
 
   const activeEntry = state.activeEntryId ? state.entries.find(e => e.id === state.activeEntryId) : null;
   const activeClientName = activeEntry ? state.clients.find(c => c.id === activeEntry.clientId)?.name || '' : '';
@@ -1955,9 +2008,58 @@ const AppLayout: React.FC = () => {
     }
   };
 
+  // Sync helper functions
+  const syncToSupabase = useCallback(async (actionType: string, payload: any, newState: AppState) => {
+    if (!user) return;
+
+    try {
+      switch (actionType) {
+        case 'START_TIMER':
+        case 'STOP_TIMER':
+        case 'UPDATE_ENTRY': {
+          const entry = newState.entries.find(e => e.id === payload?.id || e.id === newState.activeEntryId || e.startTime === payload?.startTime);
+          if (entry) await saveTimeEntry(user.id, entry);
+          // Also sync client if taskPresets updated
+          const client = newState.clients.find(c => c.id === (entry?.clientId || payload?.clientId));
+          if (client) await saveClient(user.id, client);
+          break;
+        }
+        case 'DELETE_ENTRY':
+          await deleteEntryFromSupabase(payload);
+          break;
+        case 'ADD_CLIENT':
+        case 'UPDATE_CLIENT':
+        case 'DELETE_CLIENT_PRESET':
+        case 'CLEAR_CLIENT_PRESETS': {
+          const clientToSync = newState.clients.find(c => c.id === (payload?.id || payload?.clientId || payload));
+          if (clientToSync) await saveClient(user.id, clientToSync);
+          break;
+        }
+        case 'DELETE_CLIENT':
+          await deleteClientFromSupabase(payload);
+          break;
+        case 'UPDATE_THEME':
+        case 'UPDATE_GOALS':
+          await saveUserSettings(user.id, newState.settings);
+          break;
+        case 'ADD_MONTHLY_FIXED_FEE':
+        case 'UPDATE_MONTHLY_FIXED_FEE':
+          await saveMonthlyFixedFee(user.id, payload);
+          break;
+        case 'DELETE_MONTHLY_FIXED_FEE':
+          await deleteFeeFromSupabase(payload);
+          break;
+      }
+    } catch (error) {
+      console.error('Failed to sync to Supabase:', error);
+    }
+  }, [user]);
+
   const dispatch = (action: { type: string; payload?: any }) => {
     setState(prev => {
         let newState = { ...prev };
+        let entryForSync: TimeEntry | null = null;
+
         switch (action.type) {
             case 'START_TIMER':
                 const newEntry: TimeEntry = {
@@ -1965,11 +2067,12 @@ const AppLayout: React.FC = () => {
                     clientId: action.payload.clientId,
                     startTime: Date.now(),
                     endTime: null,
-                    description: action.payload.description || '', 
+                    description: action.payload.description || '',
                     rateType: action.payload.rateType
                 };
                 newState.entries = [...prev.entries, newEntry];
                 newState.activeEntryId = newEntry.id;
+                entryForSync = newEntry;
                 if (action.payload.description) {
                   newState.clients = prev.clients.map(c => {
                     if (c.id === action.payload.clientId && !c.taskPresets.includes(action.payload.description)) {
@@ -1982,6 +2085,7 @@ const AppLayout: React.FC = () => {
             case 'STOP_TIMER':
                 if (prev.activeEntryId) {
                     newState.entries = prev.entries.map(e => e.id === prev.activeEntryId ? { ...e, endTime: Date.now() } : e);
+                    entryForSync = newState.entries.find(e => e.id === prev.activeEntryId) || null;
                     newState.activeEntryId = null;
                 }
                 break;
@@ -2004,7 +2108,7 @@ const AppLayout: React.FC = () => {
             case 'ADD_CLIENT': newState.clients = [...prev.clients, action.payload]; break;
             case 'UPDATE_CLIENT': newState.clients = prev.clients.map(c => c.id === action.payload.id ? action.payload : c); break;
             case 'DELETE_CLIENT': newState.clients = prev.clients.filter(c => c.id !== action.payload); break;
-            case 'DELETE_CLIENT_PRESET': 
+            case 'DELETE_CLIENT_PRESET':
                 newState.clients = prev.clients.map(c => {
                     if (c.id === action.payload.clientId) { return { ...c, taskPresets: c.taskPresets.filter(p => p !== action.payload.presetName) }; }
                     return c;
@@ -2024,6 +2128,10 @@ const AppLayout: React.FC = () => {
                 break;
         }
         saveState(newState);
+
+        // Sync to Supabase in background
+        syncToSupabase(action.type, entryForSync || action.payload, newState);
+
         return newState;
     });
   };
@@ -2042,6 +2150,23 @@ const AppLayout: React.FC = () => {
     { name: 'Moonlit Asteroid', value: 'linear-gradient(to right, #0F2027, #203A43, #2C5364)' },
   ];
 
+  // Show loading screen while checking auth
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600 font-medium">読み込み中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show login page if not authenticated
+  if (!user) {
+    return <LoginPage onSignIn={signIn} loading={authLoading} error={authError} />;
+  }
+
   return (
     <ThemeProvider color={state.settings.themeColor}>
       <div className="min-h-screen bg-[#F8F9FA] flex text-slate-800 font-sans">
@@ -2055,12 +2180,21 @@ const AppLayout: React.FC = () => {
               <DesktopNavItem to="/analytics" icon={<BarChart2 />} label="データ分析" active={location.pathname === '/analytics'} />
               <DesktopNavItem to="/usage" icon={<HelpCircle />} label="使い方" active={location.pathname === '/usage'} />
            </nav>
-           <div className="p-4 border-t border-slate-100"><button onClick={() => setIsSettingsOpen(true)} className="flex items-center gap-3 w-full px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl transition-colors font-bold"><Settings size={20} /><span>設定</span></button></div>
+           <div className="p-4 border-t border-slate-100">
+             <div className="flex items-center gap-2 px-4 py-2 mb-2">
+               {isSyncing ? <CloudOff size={16} className="text-orange-500 animate-pulse" /> : <Cloud size={16} className="text-green-500" />}
+               <span className="text-xs text-slate-400 font-medium">{isSyncing ? '同期中...' : 'クラウド同期済'}</span>
+             </div>
+             <button onClick={() => setIsSettingsOpen(true)} className="flex items-center gap-3 w-full px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl transition-colors font-bold"><Settings size={20} /><span>設定</span></button>
+           </div>
         </aside>
         <div className="flex-1 md:ml-64 flex flex-col min-h-screen relative">
             <header className="md:hidden theme-bg p-4 flex justify-between items-center sticky top-0 z-50 shadow-sm" style={{ background: state.settings.themeColor.includes('gradient') ? state.settings.themeColor : undefined }}>
                 <div className="flex items-center gap-2"><div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/30 shadow-sm contrast-text"><Briefcase size={22} strokeWidth={2.5} fill="none" /></div><h1 className="font-black text-2xl tracking-tighter contrast-text">Logmee</h1></div>
-                <div className="flex items-center gap-2"><button onClick={() => setIsSettingsOpen(true)} className="p-2.5 bg-white/20 rounded-full hover:bg-white/30 transition-colors contrast-text"><Settings size={20} fill="none" strokeWidth={2} /></button></div>
+                <div className="flex items-center gap-2">
+                  {isSyncing ? <CloudOff size={18} className="contrast-text opacity-70 animate-pulse" /> : <Cloud size={18} className="contrast-text opacity-70" />}
+                  <button onClick={() => setIsSettingsOpen(true)} className="p-2.5 bg-white/20 rounded-full hover:bg-white/30 transition-colors contrast-text"><Settings size={20} fill="none" strokeWidth={2} /></button>
+                </div>
             </header>
             <div className="hidden md:block h-8"></div>
             <main className="p-4 md:p-8 max-w-6xl w-full mx-auto pb-24 md:pb-8">
@@ -2092,11 +2226,47 @@ const AppLayout: React.FC = () => {
                 <div className="mb-8"><label className="text-[10px] font-black text-slate-400 block mb-4 uppercase tracking-widest">目標設定</label><div className="grid grid-cols-2 gap-4"><div className="p-4 bg-slate-50 rounded-2xl border border-slate-100"><label className="text-[8px] font-bold text-slate-400 mb-1 block">月間売上目標</label><Input type="number" value={state.settings.monthlyGoalRevenue} onChange={e => dispatch({ type: 'UPDATE_GOALS', payload: { monthlyGoalRevenue: Number(e.target.value) } })} className="!bg-white !p-0 !border-none !text-lg !font-black" /></div><div className="p-4 bg-slate-50 rounded-2xl border border-slate-100"><label className="text-[8px] font-bold text-slate-400 mb-1 block">月間稼働目標(h)</label><Input type="number" value={state.settings.monthlyGoalHours} onChange={e => dispatch({ type: 'UPDATE_GOALS', payload: { monthlyGoalHours: Number(e.target.value) } })} className="!bg-white !p-0 !border-none !text-lg !font-black" /></div></div></div>
                 <div className="mb-8"><label className="text-[10px] font-black text-slate-400 block mb-4 uppercase tracking-widest">通知設定</label><div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-slate-400 shadow-sm"><BellRing size={20}/></div><div><div className="text-xs font-black text-slate-800">ブラウザ通知</div><div className="text-[9px] text-slate-400 font-bold">長時間稼働時にアラートを表示</div></div></div><button onClick={() => { if (!state.settings.enableNotifications) { Notification.requestPermission(); } dispatch({ type: 'UPDATE_GOALS', payload: { enableNotifications: !state.settings.enableNotifications } }) }} className={`w-12 h-7 rounded-full transition-colors relative ${state.settings.enableNotifications ? 'theme-bg' : 'bg-slate-200'}`}><div className={`absolute top-1 w-5 h-5 rounded-full bg-white transition-all shadow-sm ${state.settings.enableNotifications ? 'left-6' : 'left-1'}`}></div></button></div></div>
                 <div className="mb-8"><label className="text-[10px] font-black text-slate-400 block mb-4 uppercase tracking-widest">テーマ & スタイル</label><div className="flex flex-wrap gap-4">{themeColors.map(color => (<button key={color.value} onClick={() => dispatch({ type: 'UPDATE_THEME', payload: color.value })} className={`w-12 h-12 rounded-2xl border-[3px] transition-all relative group overflow-hidden ${state.settings.themeColor === color.value ? 'border-slate-800 scale-110 shadow-lg' : 'border-transparent opacity-80'}`} style={{ background: color.value }}>{state.settings.themeColor === color.value && <div className="absolute inset-0 flex items-center justify-center text-slate-800 mix-blend-overlay"><Check size={20} strokeWidth={4} /></div>}</button>))}</div></div>
-                <div className="mb-10">
+                <div className="mb-8">
                      <button onClick={() => { setIsSettingsOpen(false); navigate('/usage'); }} className="w-full bg-slate-100 text-slate-700 font-bold h-14 rounded-2xl flex items-center justify-center gap-2 hover:bg-slate-200 transition-colors">
                         <BookOpen size={18} /> 使い方ガイドを見る
                      </button>
                 </div>
+
+                {/* Account Section */}
+                <div className="mb-8">
+                  <label className="text-[10px] font-black text-slate-400 block mb-4 uppercase tracking-widest">アカウント</label>
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div className="flex items-center gap-3 mb-4">
+                      {user?.user_metadata?.avatar_url ? (
+                        <img src={user.user_metadata.avatar_url} alt="avatar" className="w-12 h-12 rounded-full" />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-lg">
+                          {(user?.email?.[0] || 'U').toUpperCase()}
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-sm text-slate-800 truncate">{user?.user_metadata?.full_name || user?.user_metadata?.name || 'ユーザー'}</div>
+                        <div className="text-xs text-slate-400 truncate">{user?.email}</div>
+                      </div>
+                      <div className="flex items-center gap-1 text-green-500">
+                        <Cloud size={14} />
+                        <span className="text-xs font-medium">同期中</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        if (confirm('ログアウトしますか？ローカルのデータは保持されます。')) {
+                          await signOut();
+                          setIsSettingsOpen(false);
+                        }
+                      }}
+                      className="w-full flex items-center justify-center gap-2 py-3 text-red-600 bg-red-50 hover:bg-red-100 rounded-xl font-bold text-sm transition-colors"
+                    >
+                      <LogOut size={16} /> ログアウト
+                    </button>
+                  </div>
+                </div>
+
                 <Button onClick={() => setIsSettingsOpen(false)} className="w-full theme-bg contrast-text border-none font-black h-16 rounded-[24px] text-lg">設定を完了</Button>
              </div>
           </div>
