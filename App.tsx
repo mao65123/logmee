@@ -851,7 +851,8 @@ const AnalyticsPage: React.FC<{ state: AppState }> = ({ state }) => {
                     <LayoutList size={16} className="text-slate-400" />
                     <h3 className="text-xs font-black text-slate-700 uppercase">月次実績表</h3>
                 </div>
-                <div className="overflow-x-auto">
+                {/* Desktop: Table */}
+                <div className="hidden md:block overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr className="bg-slate-50 text-[10px] font-black text-slate-500 uppercase tracking-wider">
@@ -896,6 +897,32 @@ const AnalyticsPage: React.FC<{ state: AppState }> = ({ state }) => {
                             </tr>
                         </tfoot>
                     </table>
+                </div>
+                {/* Mobile: Card list */}
+                <div className="md:hidden divide-y divide-slate-100">
+                    {Object.values(analysis.clientStats).sort((a: ClientStat, b: ClientStat) => b.hours - a.hours).map((client: ClientStat) => (
+                        <div key={client.name} className="px-4 py-3">
+                            <div className="flex items-center gap-2 mb-1.5">
+                                <div className="w-2 h-2 rounded-full shrink-0" style={{backgroundColor: client.color}}></div>
+                                <span className="text-xs font-bold text-slate-700 flex-1 truncate">{client.name}</span>
+                                <span className="text-[10px] font-bold text-slate-400 shrink-0">{analysis.totalHours > 0 ? ((client.hours / analysis.totalHours) * 100).toFixed(1) : 0}%</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <span className="font-mono text-xs font-bold text-slate-600">{client.hours.toFixed(2)} h</span>
+                                <span className="font-mono text-xs font-bold text-slate-800">¥{client.revenue.toLocaleString()}</span>
+                            </div>
+                        </div>
+                    ))}
+                    {Object.keys(analysis.clientStats).length === 0 && (
+                        <div className="p-8 text-center text-xs text-slate-400 font-bold">データがありません</div>
+                    )}
+                    <div className="px-4 py-3 bg-slate-50 flex justify-between items-center">
+                        <span className="text-xs font-black text-slate-700">合計</span>
+                        <div className="flex gap-4">
+                            <span className="font-mono text-xs font-black text-slate-800">{analysis.totalHours.toFixed(2)} h</span>
+                            <span className="font-mono text-xs font-black text-slate-800">¥{analysis.totalRevenue.toLocaleString()}</span>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -993,11 +1020,11 @@ const LogsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({ s
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-1.5 bg-white rounded-xl border border-slate-200 px-3 py-1.5 shadow-sm">
+            <div className="flex items-center gap-1.5 bg-white rounded-xl border border-slate-200 px-3 py-1.5 shadow-sm min-w-0">
                 <Calendar size={14} className="text-slate-400 shrink-0" />
-                <input type="date" value={filterStartDate} onChange={e => setFilterStartDate(e.target.value)} className="text-xs font-bold text-slate-700 outline-none bg-transparent w-[120px]" />
-                <span className="text-xs text-slate-400">〜</span>
-                <input type="date" value={filterEndDate} onChange={e => setFilterEndDate(e.target.value)} className="text-xs font-bold text-slate-700 outline-none bg-transparent w-[120px]" />
+                <input type="date" value={filterStartDate} onChange={e => setFilterStartDate(e.target.value)} className="text-xs font-bold text-slate-700 outline-none bg-transparent min-w-0 flex-1" />
+                <span className="text-xs text-slate-400 shrink-0">〜</span>
+                <input type="date" value={filterEndDate} onChange={e => setFilterEndDate(e.target.value)} className="text-xs font-bold text-slate-700 outline-none bg-transparent min-w-0 flex-1" />
             </div>
             {isDateFilterActive && (
                 <button onClick={() => { setFilterStartDate(''); setFilterEndDate(''); }} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-500 transition-all">
@@ -1007,7 +1034,7 @@ const LogsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({ s
             )}
         </div>
 
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+        <div className="flex items-center gap-2 flex-wrap pb-1">
            <button
              onClick={() => setFilterClientId('all')}
              className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-bold border transition-all ${filterClientId === 'all' ? 'bg-slate-800 text-white border-transparent' : 'bg-white border-slate-200 text-slate-500'}`}
@@ -1028,7 +1055,7 @@ const LogsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({ s
 
         {/* Project filter chips */}
         {filterClientId !== 'all' && filterClientProjects.length > 0 && (
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+          <div className="flex items-center gap-2 flex-wrap pb-1">
             <span className="text-[10px] font-bold text-slate-400 shrink-0">案件:</span>
             <button onClick={() => setFilterProjectId('all')} className={`shrink-0 px-3 py-1 rounded-full text-[10px] font-bold border transition-all ${filterProjectId === 'all' ? 'bg-slate-700 text-white border-transparent' : 'bg-white border-slate-200 text-slate-500'}`}>すべて</button>
             {filterClientProjects.map(p => (
@@ -1039,7 +1066,7 @@ const LogsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({ s
 
         {/* Category filter chips */}
         {allCategories.length > 0 && (
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+          <div className="flex items-center gap-2 flex-wrap pb-1">
             <span className="text-[10px] font-bold text-slate-400 shrink-0">カテゴリ:</span>
             <button onClick={() => setFilterCategory('all')} className={`shrink-0 px-3 py-1 rounded-full text-[10px] font-bold border transition-all ${filterCategory === 'all' ? 'bg-slate-700 text-white border-transparent' : 'bg-white border-slate-200 text-slate-500'}`}>すべて</button>
             {allCategories.map(cat => (
@@ -1049,7 +1076,8 @@ const LogsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({ s
         )}
       </div>
 
-      <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+      {/* Desktop: Table view */}
+      <div className="hidden md:block bg-white rounded-lg border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm border-collapse">
             <thead>
@@ -1117,6 +1145,58 @@ const LogsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({ s
               : `${displayMonth.getFullYear()}年${displayMonth.getMonth() + 1}月の履歴はありません`
             }
           </div>
+        )}
+      </div>
+
+      {/* Mobile: Card view */}
+      <div className="md:hidden space-y-3">
+        {Object.keys(entriesByDate).length === 0 ? (
+          <div className="text-center py-10 text-slate-400 text-xs bg-white rounded-2xl border border-slate-200">
+            {isDateFilterActive
+              ? '指定された期間の履歴はありません'
+              : `${displayMonth.getFullYear()}年${displayMonth.getMonth() + 1}月の履歴はありません`
+            }
+          </div>
+        ) : (
+          Object.keys(entriesByDate).map(dateKey => {
+            const { entries, totalDuration } = entriesByDate[dateKey];
+            const totalHours = totalDuration / 3600000;
+            const dateStr = new Date(entries[0].startTime).toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit', weekday: 'short' });
+            return (
+              <div key={dateKey} className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                <div className="flex justify-between items-center px-4 py-2.5 bg-slate-50 border-b border-slate-100">
+                  <span className="text-xs font-black text-slate-700">{dateStr}</span>
+                  <span className="text-xs font-bold text-slate-500">{totalHours.toFixed(2)} h</span>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {entries.map(e => {
+                    const client = state.clients.find(c => c.id === e.clientId);
+                    const project = e.projectId ? client?.projects?.find(p => p.id === e.projectId) : null;
+                    const duration = e.endTime ? (e.endTime - e.startTime) / 3600000 : 0;
+                    return (
+                      <div key={e.id} onClick={() => setEditingEntry(e)} className="px-4 py-3 active:bg-slate-50 cursor-pointer">
+                        <div className="flex justify-between items-start mb-1.5">
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                            <div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: client?.color || '#ccc' }}></div>
+                            <span className="text-xs font-bold text-slate-700 truncate">{client?.name || '不明'}</span>
+                          </div>
+                          <span className="text-xs font-bold text-slate-800 shrink-0 ml-2">{e.endTime ? `${duration.toFixed(2)} h` : <span className="text-green-500">稼働中</span>}</span>
+                        </div>
+                        <div className="text-xs text-slate-500 mb-1">
+                          <span className="font-mono">{new Date(e.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                          <span className="mx-1">〜</span>
+                          <span className="font-mono">{e.endTime ? new Date(e.endTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '--:--'}</span>
+                          {project && <span className="ml-2 text-slate-400">・{project.name}</span>}
+                          {e.category && <span className="ml-1 text-slate-400">・{e.category}</span>}
+                        </div>
+                        {e.description && <div className="text-xs text-slate-600 truncate">{e.description}</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })
         )}
       </div>
 
@@ -1590,7 +1670,8 @@ const ReportPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({
       </Card>
       <div className="mt-8">
           <h3 className="text-xs font-black text-slate-400 ml-1 mb-3 uppercase tracking-widest">対象期間の作業一覧 (タップして編集)</h3>
-          <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+          {/* Desktop: Table view */}
+          <div className="hidden md:block bg-white rounded-lg border border-slate-200 overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm border-collapse">
                 <thead>
@@ -1651,17 +1732,53 @@ const ReportPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({
               <div className="text-center py-10 text-slate-400 text-xs font-bold">対象期間に履歴がありません</div>
             )}
           </div>
+          {/* Mobile: Card view */}
+          <div className="md:hidden space-y-2">
+            {filteredEntriesRaw.length === 0 ? (
+              <div className="text-center py-10 text-slate-400 text-xs font-bold bg-white rounded-2xl border border-slate-200">対象期間に履歴がありません</div>
+            ) : (
+              <>
+                {(() => {
+                  const reportClient = state.clients.find(c => c.id === selectedClientId);
+                  return filteredEntriesRaw.map(e => {
+                    const project = e.projectId ? reportClient?.projects?.find(p => p.id === e.projectId) : null;
+                    const duration = e.endTime ? (e.endTime - e.startTime) / 3600000 : 0;
+                    const dateStr = new Date(e.startTime).toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit', weekday: 'short' });
+                    return (
+                      <div key={e.id} onClick={() => setEditingEntry(e)} className="bg-white rounded-xl border border-slate-200 px-4 py-3 active:bg-slate-50 cursor-pointer">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-xs font-bold text-slate-700">{dateStr}</span>
+                          <span className="text-xs font-bold text-slate-800">{e.endTime ? `${duration.toFixed(2)} h` : '-'}</span>
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          <span className="font-mono">{new Date(e.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                          <span className="mx-1">〜</span>
+                          <span className="font-mono">{e.endTime ? new Date(e.endTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '--:--'}</span>
+                          {project && <span className="ml-2 text-slate-400">・{project.name}</span>}
+                        </div>
+                        {e.description && <div className="text-xs text-slate-600 mt-1 truncate">{e.description}</div>}
+                      </div>
+                    );
+                  });
+                })()}
+                <div className="flex justify-between items-center px-4 py-2 bg-slate-100 rounded-xl">
+                  <span className="text-xs font-bold text-slate-500">合計</span>
+                  <span className="text-xs font-black text-slate-800">{(filteredEntriesRaw.reduce((sum, e) => sum + (e.endTime ? (e.endTime - e.startTime) / 3600000 : 0), 0)).toFixed(2)} h</span>
+                </div>
+              </>
+            )}
+          </div>
       </div>
       <EditEntryDrawer isOpen={!!editingEntry} onClose={() => setEditingEntry(null)} entry={editingEntry} clients={state.clients} allEntries={state.entries} onSave={(id, updates) => dispatch({type: 'UPDATE_ENTRY', payload: {id, ...updates}})} onDelete={(id) => dispatch({type: 'DELETE_ENTRY', payload: id})} />
       {showPreview && previewData && (
-         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-2 md:p-4 animate-in fade-in">
             <div className="bg-white w-full max-w-2xl max-h-[90vh] rounded-xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
                 <div className="p-4 border-b flex justify-between items-center bg-slate-50">
                     <h3 className="font-bold text-slate-700 flex items-center gap-2"><FileText size={18} /> プレビュー</h3>
                     <button onClick={() => setShowPreview(false)} className="p-1 rounded-full hover:bg-slate-200 transition-colors"><X size={20} className="text-slate-500" /></button>
                 </div>
-                <div className="flex-1 overflow-y-auto p-8 bg-slate-100">
-                    <div id="printable-content" className="bg-white p-12 shadow-sm mx-auto max-w-[210mm] min-h-[297mm] text-black relative">
+                <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-slate-100">
+                    <div id="printable-content" className="bg-white p-4 md:p-12 shadow-sm mx-auto max-w-[210mm] min-h-0 md:min-h-[297mm] text-black relative">
                         <div className="border-b-2 border-black pb-4 mb-8 flex justify-between items-end">
                             <div>
                                 <h1 className="text-2xl font-bold tracking-tight mb-1 text-black">{previewData.options.title}</h1>
@@ -2198,7 +2315,7 @@ const ProjectsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = 
             {/* Filter bar */}
             <div className="space-y-2 px-1">
                 {/* Client filter chips */}
-                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+                <div className="flex items-center gap-2 flex-wrap pb-1">
                     <button onClick={() => setFilterClientId('all')} className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-bold border transition-all ${filterClientId === 'all' ? 'bg-slate-700 text-white border-transparent' : 'bg-white border-slate-200 text-slate-500'}`}>すべて</button>
                     {state.clients.map(c => (
                         <button key={c.id} onClick={() => setFilterClientId(c.id)} className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-bold border transition-all flex items-center gap-1.5 ${filterClientId === c.id ? 'bg-slate-700 text-white border-transparent' : 'bg-white border-slate-200 text-slate-500'}`}>
@@ -2208,8 +2325,8 @@ const ProjectsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = 
                     ))}
                 </div>
                 {/* Status filter + search */}
-                <div className="flex items-center gap-2">
-                    <div className="flex gap-1 bg-white rounded-lg border border-slate-200 p-0.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex gap-1 bg-white rounded-lg border border-slate-200 p-0.5 shrink-0">
                         {(['all', 'active', 'completed'] as const).map(s => (
                             <button key={s} onClick={() => setFilterStatus(s)} className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${filterStatus === s ? 'bg-slate-700 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>
                                 {s === 'all' ? '全て' : s === 'active' ? 'アクティブ' : '完了'}
@@ -2221,7 +2338,7 @@ const ProjectsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = 
                         value={searchText}
                         onChange={e => setSearchText(e.target.value)}
                         placeholder="案件名で検索..."
-                        className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-slate-400 transition-colors"
+                        className="flex-1 min-w-0 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-slate-400 transition-colors"
                     />
                 </div>
             </div>
@@ -2242,7 +2359,9 @@ const ProjectsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = 
                     <p className="text-xs text-slate-400 mt-1">「新規登録」ボタンから案件を追加しましょう</p>
                 </Card>
             ) : (
-                <Card className="!p-0 overflow-hidden">
+                <>
+                {/* Desktop: Table view */}
+                <Card className="!p-0 overflow-hidden hidden md:block">
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">
                             <thead>
@@ -2288,6 +2407,32 @@ const ProjectsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = 
                         </table>
                     </div>
                 </Card>
+                {/* Mobile: Card view */}
+                <div className="md:hidden space-y-2">
+                    {filteredProjects.map(project => (
+                        <Card key={project.id} onClick={() => { setEditingProject(project); setIsFormOpen(true); }} className={`!p-4 cursor-pointer active:bg-slate-50 ${!project.isActive ? 'opacity-50' : ''}`}>
+                            <div className="flex justify-between items-start">
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-bold text-slate-800 truncate">{project.name}</div>
+                                    <div className="flex items-center gap-1.5 mt-1">
+                                        <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: project.clientColor }}></div>
+                                        <span className="text-xs text-slate-500">{project.clientName}</span>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3 shrink-0 ml-3">
+                                    <span className="text-xs font-black text-slate-700">¥{project.fixedFee.toLocaleString()}</span>
+                                    <button
+                                        onClick={e => { e.stopPropagation(); handleToggleActive(project); }}
+                                        className={`w-10 h-5 rounded-full transition-colors relative ${project.isActive ? 'theme-bg' : 'bg-slate-200'}`}
+                                    >
+                                        <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${project.isActive ? 'left-5' : 'left-0.5'}`}></div>
+                                    </button>
+                                </div>
+                            </div>
+                        </Card>
+                    ))}
+                </div>
+                </>
             )}
 
             {/* 月次報酬管理セクション */}
@@ -2455,7 +2600,7 @@ const ClientsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = (
                  <h2 className="text-lg font-black text-slate-800">クライアント管理</h2>
                  <Button onClick={() => { setEditingClient(null); setIsFormOpen(true); }} className="!py-2 !px-4 !rounded-lg text-xs theme-bg contrast-text"><Plus size={16} /> 新規登録</Button>
             </div>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 {state.clients.map(client => (
                     <Card key={client.id} onClick={() => { setEditingClient(client); setIsFormOpen(true); }} className="!p-4 hover:!border-slate-300 transition-all border border-transparent cursor-pointer">
                         <div className="flex justify-between items-start mb-3">
@@ -2520,7 +2665,7 @@ const ClientsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = (
                             <div>
                                 <label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">締日設定</label>
                                 <div className="space-y-3">
-                                    <div className="grid grid-cols-4 gap-2">
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                                         {[99, 15, 20, 25].map(d => (<button key={d} type="button" onClick={() => setClosingDate(d.toString())} className={`py-3 rounded-xl text-xs font-bold transition-all ${closingDate === d.toString() ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-500'}`}>{d === 99 ? '末日' : `${d}日`}</button>))}
                                     </div>
                                     <div className="flex items-center gap-2 bg-slate-50 rounded-xl px-4 py-3 border border-transparent focus-within:border-slate-200 transition-all">
