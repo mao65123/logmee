@@ -3326,7 +3326,7 @@ const AppLayout: React.FC = () => {
            </div>
         </aside>
         <div className="flex-1 md:ml-64 flex flex-col min-h-screen relative">
-            <header className="md:hidden theme-bg p-4 flex justify-between items-center sticky top-0 z-50 shadow-sm" style={{ background: state.settings.themeColor.includes('gradient') ? state.settings.themeColor : undefined }}>
+            <header className="md:hidden theme-bg p-4 flex justify-between items-center sticky top-0 z-50 shadow-sm">
                 <div className="flex items-center gap-2"><div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/30 shadow-sm contrast-text"><Briefcase size={22} strokeWidth={2.5} fill="none" /></div><h1 className="font-black text-2xl tracking-tighter contrast-text">Logmee</h1></div>
                 <div className="flex items-center gap-2">
                   {isSyncing ? <CloudOff size={18} className="contrast-text opacity-70 animate-pulse" /> : <Cloud size={18} className="contrast-text opacity-70" />}
