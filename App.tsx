@@ -51,9 +51,21 @@ const ThemeProvider: React.FC<{ color: string; children: React.ReactNode }> = ({
     }
     
     // Set CSS Variables
-    root.style.setProperty('--theme-color', solidColor); 
+    root.style.setProperty('--theme-color', solidColor);
     root.style.setProperty('--theme-bg-gradient', color);
     root.style.setProperty('--theme-contrast-text', contrast);
+
+    // Update meta theme-color for mobile browser status bar
+    const metaThemeColor = document.getElementById('meta-theme-color') as HTMLMetaElement | null;
+    if (metaThemeColor) {
+      // For gradients, extract the first color; for solid colors, use as-is
+      if (color.includes('gradient')) {
+        const match = color.match(/#[0-9a-fA-F]{6}|#[0-9a-fA-F]{3}/);
+        metaThemeColor.content = match ? match[0] : '#334155';
+      } else {
+        metaThemeColor.content = color;
+      }
+    }
   }, [color]);
   return <>{children}</>;
 };
@@ -3326,7 +3338,7 @@ const AppLayout: React.FC = () => {
            </div>
         </aside>
         <div className="flex-1 md:ml-64 flex flex-col min-h-screen relative">
-            <header className="md:hidden theme-bg p-4 flex justify-between items-center sticky top-0 z-50 shadow-sm">
+            <header className="md:hidden theme-bg p-4 pt-safe flex justify-between items-center sticky top-0 z-50 shadow-sm">
                 <div className="flex items-center gap-2"><div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/30 shadow-sm contrast-text"><Briefcase size={22} strokeWidth={2.5} fill="none" /></div><h1 className="font-black text-2xl tracking-tighter contrast-text">Logmee</h1></div>
                 <div className="flex items-center gap-2">
                   {isSyncing ? <CloudOff size={18} className="contrast-text opacity-70 animate-pulse" /> : <Cloud size={18} className="contrast-text opacity-70" />}

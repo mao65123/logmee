@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover" />
+    <meta name="theme-color" content="#FFD700" id="meta-theme-color" />
     <title>Logmee</title>
     <!-- Google Fonts: Noto Sans JP -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -68,6 +69,8 @@
       .theme-border { border-color: var(--theme-color); }
       .contrast-text { color: var(--theme-contrast-text) !important; }
 
+      .pt-safe { padding-top: env(safe-area-inset-top); }
+      .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
     </style>
     <script type="importmap">
     {
