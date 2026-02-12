@@ -7,9 +7,11 @@ import {
   deleteTimeEntry as deleteEntryFromDb,
   saveUserSettings,
   saveMonthlyFixedFee,
-  deleteMonthlyFixedFee as deleteFeeFromDb
+  deleteMonthlyFixedFee as deleteFeeFromDb,
+  saveProject,
+  deleteProject as deleteProjectFromDb
 } from '../services/supabase';
-import { Client, TimeEntry, UserSettings, MonthlyFixedFee } from '../types';
+import { Client, TimeEntry, UserSettings, MonthlyFixedFee, Project } from '../types';
 
 interface UseSupabaseSyncReturn {
   syncClient: (client: Client) => Promise<boolean>;
@@ -19,6 +21,8 @@ interface UseSupabaseSyncReturn {
   syncSettings: (settings: UserSettings) => Promise<boolean>;
   syncMonthlyFee: (fee: MonthlyFixedFee) => Promise<boolean>;
   syncDeleteMonthlyFee: (feeId: string) => Promise<boolean>;
+  syncProject: (project: Project) => Promise<boolean>;
+  syncDeleteProject: (projectId: string) => Promise<boolean>;
 }
 
 export function useSupabaseSync(user: User | null): UseSupabaseSyncReturn {
@@ -71,6 +75,16 @@ export function useSupabaseSync(user: User | null): UseSupabaseSyncReturn {
     return deleteFeeFromDb(feeId);
   }, [user]);
 
+  const syncProject = useCallback(async (project: Project): Promise<boolean> => {
+    if (!user) return false;
+    return saveProject(user.id, project);
+  }, [user]);
+
+  const syncDeleteProject = useCallback(async (projectId: string): Promise<boolean> => {
+    if (!user) return false;
+    return deleteProjectFromDb(projectId);
+  }, [user]);
+
   return {
     syncClient,
     syncDeleteClient,
@@ -78,6 +92,8 @@ export function useSupabaseSync(user: User | null): UseSupabaseSyncReturn {
     syncDeleteEntry,
     syncSettings,
     syncMonthlyFee,
-    syncDeleteMonthlyFee
+    syncDeleteMonthlyFee,
+    syncProject,
+    syncDeleteProject
   };
 }

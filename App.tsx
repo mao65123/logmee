@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { ResponsiveContainer, Cell, BarChart, Bar, XAxis, Tooltip as RechartsTooltip, PieChart, Pie, Legend } from 'recharts';
 
-import { AppState, Client, TimeEntry, MonthlyFixedFee, Currency } from './types';
+import { AppState, Client, TimeEntry, MonthlyFixedFee, Project, Currency, SavedReport } from './types';
 import { loadState, saveState } from './services/storage';
 import { exportToCSV } from './services/pdfGenerator';
 import { Card, Button, Input, Select, Badge } from './components/UIComponents';
@@ -22,7 +22,11 @@ import {
   deleteTimeEntry as deleteEntryFromSupabase,
   saveUserSettings,
   saveMonthlyFixedFee,
-  deleteMonthlyFixedFee as deleteFeeFromSupabase
+  deleteMonthlyFixedFee as deleteFeeFromSupabase,
+  saveProject,
+  deleteProject as deleteProjectFromSupabase,
+  saveSavedReport,
+  deleteSavedReport as deleteSavedReportFromSupabase
 } from './services/supabase';
 
 // --- Theme Style Wrapper ---
@@ -250,89 +254,134 @@ const EditEntryDrawer: React.FC<{
     onClose: () => void;
     entry: TimeEntry | null;
     clients: Client[];
+    allEntries: TimeEntry[];
     onSave: (id: string, updates: Partial<TimeEntry>) => void;
     onDelete: (id: string) => void;
-}> = ({ isOpen, onClose, entry, clients, onSave, onDelete }) => {
+}> = ({ isOpen, onClose, entry, clients, allEntries, onSave, onDelete }) => {
     const [editDesc, setEditDesc] = useState('');
-    const [editStart, setEditStart] = useState('');
-    const [editEnd, setEditEnd] = useState('');
+    const [editStartDate, setEditStartDate] = useState('');
+    const [editStartTime, setEditStartTime] = useState('');
+    const [editEndDate, setEditEndDate] = useState('');
+    const [editEndTime, setEditEndTime] = useState('');
     const [editClientId, setEditClientId] = useState('');
+    const [editProjectId, setEditProjectId] = useState<string>('');
+    const [editCategory, setEditCategory] = useState('');
 
     useEffect(() => {
         if (entry) {
             setEditDesc(entry.description);
-            setEditStart(formatForInput(entry.startTime));
-            setEditEnd(formatForInput(entry.endTime));
+            const startStr = formatForInput(entry.startTime);
+            const endStr = formatForInput(entry.endTime);
+            setEditStartDate(startStr ? startStr.split('T')[0] : '');
+            setEditStartTime(startStr ? startStr.split('T')[1] : '');
+            setEditEndDate(endStr ? endStr.split('T')[0] : '');
+            setEditEndTime(endStr ? endStr.split('T')[1] : '');
             setEditClientId(entry.clientId);
+            setEditProjectId(entry.projectId || '');
+            setEditCategory(entry.category || '');
         }
     }, [entry]);
 
     if (!isOpen || !entry) return null;
 
-    const handleStartChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const newStart = e.target.value;
-        setEditStart(newStart);
-        if (editEnd && newStart) {
-            const startDatePart = newStart.split('T')[0];
-            const endTimePart = editEnd.split('T')[1];
-            if (startDatePart && endTimePart) {
-                setEditEnd(`${startDatePart}T${endTimePart}`);
-            }
+    const selectedClient = clients.find(c => c.id === editClientId);
+    const activeProjects = selectedClient?.projects?.filter(p => p.isActive) || [];
+    const clientCategories = selectedClient?.categories || [];
+    const categoryOptions = editCategory && !clientCategories.includes(editCategory)
+        ? [...clientCategories, editCategory]
+        : clientCategories;
+
+    const handleStartDateChange = (val: string) => {
+        setEditStartDate(val);
+        // Sync end date to start date
+        if (editEndDate) {
+            setEditEndDate(val);
         }
     };
 
     const handleSave = () => {
+        const startCombined = editStartDate && editStartTime ? `${editStartDate}T${editStartTime}` : '';
+        const endCombined = editEndDate && editEndTime ? `${editEndDate}T${editEndTime}` : '';
         onSave(entry.id, {
             description: editDesc,
             clientId: editClientId,
-            startTime: new Date(editStart).getTime(),
-            endTime: editEnd ? new Date(editEnd).getTime() : null,
+            startTime: startCombined ? new Date(startCombined).getTime() : entry.startTime,
+            endTime: endCombined ? new Date(endCombined).getTime() : null,
+            projectId: editProjectId || undefined,
+            category: editCategory || undefined,
         });
         onClose();
     };
 
     return (
-        <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-300">
-            <div className="bg-white w-full max-w-md rounded-t-[40px] p-8 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[90vh] overflow-y-auto">
-                <div className="w-12 h-1 bg-slate-100 rounded-full mx-auto mb-6"></div>
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-300">
+            <div className="bg-white w-full max-w-lg rounded-2xl p-8 shadow-2xl animate-in zoom-in-95 duration-300 max-h-[85vh] overflow-y-auto mx-4">
                 <div className="flex justify-between items-center mb-6">
                     <h3 className="text-xl font-black text-slate-800">履歴の編集</h3>
-                    <button 
+                    <button
                         onClick={() => {
                             if (confirm('この履歴を完全に削除しますか？')) {
                                 onDelete(entry.id);
                                 onClose();
                             }
-                        }} 
+                        }}
                         className="p-2 text-red-500 bg-red-50 rounded-full hover:bg-red-100 transition-colors"
                     >
                         <Trash2 size={20} />
                     </button>
                 </div>
-                
+
                 <div className="space-y-5 mb-8">
                     <div>
                         <label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">クライアント</label>
-                        <Select value={editClientId} onChange={e => setEditClientId(e.target.value)} className="!rounded-xl border-slate-200 h-12">
+                        <Select value={editClientId} onChange={e => { setEditClientId(e.target.value); setEditProjectId(''); setEditCategory(''); }} className="!rounded-xl border-slate-200 h-12">
                             {clients.map(c => (
                                 <option key={c.id} value={c.id}>{c.name}</option>
                             ))}
                         </Select>
                     </div>
-                    
+
+                    {activeProjects.length > 0 && (
+                        <div>
+                            <label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">案件</label>
+                            <Select value={editProjectId} onChange={e => setEditProjectId(e.target.value)} className="!rounded-xl border-slate-200 h-12">
+                                <option value="">案件なし（全般）</option>
+                                {activeProjects.map(p => (
+                                    <option key={p.id} value={p.id}>{p.name}</option>
+                                ))}
+                            </Select>
+                        </div>
+                    )}
+
                     <div>
                         <label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">作業内容</label>
                         <Input value={editDesc} onChange={e => setEditDesc(e.target.value)} className="!h-12" />
                     </div>
 
+                    {categoryOptions.length > 0 && (
+                        <div>
+                            <label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">カテゴリ</label>
+                            <Select value={editCategory} onChange={e => setEditCategory(e.target.value)} className="!rounded-xl border-slate-200 h-12">
+                                <option value="">カテゴリなし</option>
+                                {categoryOptions.map(cat => (
+                                    <option key={cat} value={cat}>{cat}</option>
+                                ))}
+                            </Select>
+                        </div>
+                    )}
+
+                    <div>
+                        <label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">日付</label>
+                        <Input type="date" value={editStartDate} onChange={e => handleStartDateChange(e.target.value)} className="!text-sm font-bold h-12" />
+                    </div>
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">開始時刻</label>
-                            <Input type="datetime-local" value={editStart} onChange={handleStartChange} className="!text-xs font-bold h-12" />
+                            <Input type="time" value={editStartTime} onChange={e => setEditStartTime(e.target.value)} className="!text-sm font-bold h-12" />
                         </div>
                         <div>
                             <label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">終了時刻</label>
-                            <Input type="datetime-local" value={editEnd} onChange={e => setEditEnd(e.target.value)} className="!text-xs font-bold h-12" />
+                            <Input type="time" value={editEndTime} onChange={e => setEditEndTime(e.target.value)} className="!text-sm font-bold h-12" />
                         </div>
                     </div>
                 </div>
@@ -371,7 +420,7 @@ const UsagePage: React.FC = () => {
                                 <ul className="list-disc pl-4 space-y-1 text-xs font-bold text-slate-500">
                                     <li>クライアントごとのテーマカラーを設定可能</li>
                                     <li><span className="text-slate-700">基本時給</span>を設定すると、自動で売上を計算</li>
-                                    <li><span className="text-slate-700">固定報酬</span>（月額リテナーなど）の設定も可能</li>
+                                    <li><span className="text-slate-700">案件</span>を登録して固定報酬を管理</li>
                                     <li>請求書の<span className="text-slate-700">締日</span>を設定して、期間集計をスムーズに</li>
                                 </ul>
                             </div>
@@ -400,7 +449,7 @@ const UsagePage: React.FC = () => {
                                         <div className="text-xs"><span className="font-bold">固定</span>: 時間計測のみ（売上は月次固定報酬で管理）</div>
                                     </div>
                                     <div className="text-xs text-slate-400 font-bold mt-2">
-                                        ※ クライアントに時給か固定報酬のどちらか一方のみ設定している場合、自動で選択されます。
+                                        ※ 案件を選択すると自動で「固定」が選択されます。
                                     </div>
                                 </div>
                             </div>
@@ -418,9 +467,9 @@ const UsagePage: React.FC = () => {
                         <div className="flex gap-4">
                             <div className="mt-1 text-slate-400"><Coins size={24} /></div>
                             <div className="text-sm text-slate-600 leading-relaxed">
-                                <p className="mb-2">固定報酬は<span className="font-bold text-slate-800">「クライアント管理」</span>ページ下部で月ごとに管理できます。</p>
+                                <p className="mb-2">固定報酬は<span className="font-bold text-slate-800">「案件管理」</span>ページ下部で月ごとに管理できます。</p>
                                 <ul className="list-disc pl-4 space-y-1 text-xs font-bold text-slate-500">
-                                    <li>固定報酬を設定したクライアントが一覧表示されます</li>
+                                    <li>固定報酬を設定した案件が一覧表示されます</li>
                                     <li>月を選択し、<span className="text-slate-700">トグルをON</span>にするとその月の売上に含まれます</li>
                                     <li>時間計測なしでも売上に反映可能（月額契約など）</li>
                                     <li>単発案件や月によって変動する契約にも対応</li>
@@ -547,6 +596,7 @@ const AnalyticsPage: React.FC<{ state: AppState }> = ({ state }) => {
         const monthlyEntries = state.entries.filter(e => e.startTime >= startOfMonth && e.startTime <= endOfMonth);
 
         const clientStats: {[key: string]: ClientStat} = {};
+        const categoryStats: {[key: string]: { hours: number; count: number }} = {};
 
         // 時間計測ベースの集計
         monthlyEntries.forEach(e => {
@@ -567,19 +617,31 @@ const AnalyticsPage: React.FC<{ state: AppState }> = ({ state }) => {
             clientStats[e.clientId].hours += hours;
             clientStats[e.clientId].count += 1;
 
-            if (client.defaultHourlyRate) {
-                clientStats[e.clientId].revenue += hours * client.defaultHourlyRate;
+            // Revenue: client hourly rate
+            const hourlyRate = client.defaultHourlyRate;
+            if (hourlyRate) {
+                clientStats[e.clientId].revenue += Math.floor(hours * hourlyRate);
             }
+
+            // Category stats
+            const cat = e.category || '未分類';
+            if (!categoryStats[cat]) {
+                categoryStats[cat] = { hours: 0, count: 0 };
+            }
+            categoryStats[cat].hours += hours;
+            categoryStats[cat].count += 1;
         });
 
-        // 月次固定報酬を加算
+        // 月次固定報酬を加算（案件→クライアント逆引き）
+        const allProjects = state.clients.flatMap(c => (c.projects || []).map(p => ({ ...p, client: c })));
         const monthlyFixedFees = state.monthlyFixedFees.filter(f => f.yearMonth === yearMonth);
         monthlyFixedFees.forEach(fee => {
-            const client = state.clients.find(c => c.id === fee.clientId);
-            if (!client) return;
+            const projectInfo = allProjects.find(p => p.id === fee.projectId);
+            if (!projectInfo) return;
+            const client = projectInfo.client;
 
-            if (!clientStats[fee.clientId]) {
-                clientStats[fee.clientId] = {
+            if (!clientStats[client.id]) {
+                clientStats[client.id] = {
                     name: client.name,
                     color: client.color,
                     hours: 0,
@@ -587,7 +649,7 @@ const AnalyticsPage: React.FC<{ state: AppState }> = ({ state }) => {
                     count: 0
                 };
             }
-            clientStats[fee.clientId].revenue += fee.amount;
+            clientStats[client.id].revenue += fee.amount;
         });
 
         const totalHours = Object.values(clientStats).reduce((acc, c) => acc + c.hours, 0);
@@ -598,6 +660,17 @@ const AnalyticsPage: React.FC<{ state: AppState }> = ({ state }) => {
             value: c.hours,
             color: c.color
         })).filter(d => d.value > 0);
+
+        // Category pie data
+        const CATEGORY_COLORS = ['#4A6FA5', '#6B8E23', '#CD853F', '#BC8F8F', '#708090', '#5F9EA0', '#A0522D', '#808000', '#4682B4', '#D2691E'];
+        const categoryPieData = Object.entries(categoryStats)
+            .map(([name, stat], i) => ({
+                name,
+                value: stat.hours,
+                color: CATEGORY_COLORS[i % CATEGORY_COLORS.length]
+            }))
+            .filter(d => d.value > 0)
+            .sort((a, b) => b.value - a.value);
 
         const dailyData = [];
         const daysInMonth = new Date(displayMonth.getFullYear(), displayMonth.getMonth() + 1, 0).getDate();
@@ -613,7 +686,7 @@ const AnalyticsPage: React.FC<{ state: AppState }> = ({ state }) => {
             dailyData.push({ day: i, hours: dayHours });
         }
 
-        return { clientStats, totalHours, totalRevenue, pieData, dailyData };
+        return { clientStats, categoryStats, totalHours, totalRevenue, pieData, categoryPieData, dailyData };
     }, [state.entries, state.clients, state.monthlyFixedFees, displayMonth]);
 
     return (
@@ -711,6 +784,69 @@ const AnalyticsPage: React.FC<{ state: AppState }> = ({ state }) => {
                 </Card>
             </div>
 
+            {/* カテゴリ別 稼働割合 */}
+            {analysis.categoryPieData.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Card className="!p-4 min-h-[300px]">
+                        <div className="flex items-center gap-2 mb-4">
+                            <PieChartIcon size={16} className="text-slate-400" />
+                            <h3 className="text-xs font-black text-slate-700 uppercase">カテゴリ別 時間割合</h3>
+                        </div>
+                        <div className="h-56 w-full flex items-center justify-center">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie
+                                        data={analysis.categoryPieData}
+                                        innerRadius={60}
+                                        outerRadius={80}
+                                        paddingAngle={5}
+                                        dataKey="value"
+                                    >
+                                        {analysis.categoryPieData.map((entry, index) => (
+                                            <Cell key={`cat-cell-${index}`} fill={entry.color} stroke="none" />
+                                        ))}
+                                    </Pie>
+                                    <Legend
+                                        verticalAlign="bottom"
+                                        height={36}
+                                        iconType="circle"
+                                        iconSize={8}
+                                        formatter={(value) => <span className="text-[10px] font-bold text-slate-600 ml-1">{value}</span>}
+                                    />
+                                    <RechartsTooltip
+                                        contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}}
+                                        formatter={(value: number) => `${value.toFixed(2)} h`}
+                                    />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </Card>
+
+                    <Card className="!p-4 min-h-[300px]">
+                        <div className="flex items-center gap-2 mb-4">
+                            <LayoutList size={16} className="text-slate-400" />
+                            <h3 className="text-xs font-black text-slate-700 uppercase">カテゴリ別 時間一覧</h3>
+                        </div>
+                        <div className="space-y-2">
+                            {analysis.categoryPieData.map((cat) => (
+                                <div key={cat.name} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-2.5 h-2.5 rounded-full" style={{backgroundColor: cat.color}}></div>
+                                        <span className="text-xs font-bold text-slate-700">{cat.name}</span>
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                        <span className="font-mono text-xs font-bold text-slate-600">{cat.value.toFixed(2)} h</span>
+                                        <span className="text-[10px] font-bold text-slate-400 min-w-[40px] text-right">
+                                            {analysis.totalHours > 0 ? ((cat.value / analysis.totalHours) * 100).toFixed(1) : 0}%
+                                        </span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </Card>
+                </div>
+            )}
+
             <div className="bg-white rounded-3xl shadow-sm overflow-hidden">
                 <div className="p-4 border-b border-slate-100 flex items-center gap-2">
                     <LayoutList size={16} className="text-slate-400" />
@@ -769,24 +905,66 @@ const AnalyticsPage: React.FC<{ state: AppState }> = ({ state }) => {
 
 const LogsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({ state, dispatch }) => {
   const [filterClientId, setFilterClientId] = useState('all');
+  const [filterProjectId, setFilterProjectId] = useState('all');
+  const [filterCategory, setFilterCategory] = useState('all');
   const [displayMonth, setDisplayMonth] = useState(new Date());
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
-  
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
+
+  const isDateFilterActive = filterStartDate !== '' || filterEndDate !== '';
+
   const handlePrevMonth = () => {
     setDisplayMonth(new Date(displayMonth.getFullYear(), displayMonth.getMonth() - 1, 1));
+    setFilterStartDate('');
+    setFilterEndDate('');
   };
-  
+
   const handleNextMonth = () => {
     setDisplayMonth(new Date(displayMonth.getFullYear(), displayMonth.getMonth() + 1, 1));
+    setFilterStartDate('');
+    setFilterEndDate('');
   };
+
+  // Reset project filter when client changes
+  useEffect(() => {
+    setFilterProjectId('all');
+  }, [filterClientId]);
+
+  const selectedFilterClient = state.clients.find(c => c.id === filterClientId);
+  const filterClientProjects = selectedFilterClient?.projects?.filter(p => p.isActive) || [];
+
+  // Get unique categories from all entries for filter
+  const allCategories = useMemo(() => {
+    const cats = new Set<string>();
+    state.entries.forEach(e => { if (e.category) cats.add(e.category); });
+    return Array.from(cats).sort();
+  }, [state.entries]);
 
   const entriesByDate = useMemo(() => {
     let list = [...state.entries];
-    const startOfMonth = new Date(displayMonth.getFullYear(), displayMonth.getMonth(), 1).getTime();
-    const endOfMonth = new Date(displayMonth.getFullYear(), displayMonth.getMonth() + 1, 0, 23, 59, 59).getTime();
-    list = list.filter(e => e.startTime >= startOfMonth && e.startTime <= endOfMonth);
+    if (isDateFilterActive) {
+      if (filterStartDate) {
+        const start = new Date(filterStartDate).getTime();
+        list = list.filter(e => e.startTime >= start);
+      }
+      if (filterEndDate) {
+        const end = new Date(filterEndDate + 'T23:59:59').getTime();
+        list = list.filter(e => e.startTime <= end);
+      }
+    } else {
+      const startOfMonth = new Date(displayMonth.getFullYear(), displayMonth.getMonth(), 1).getTime();
+      const endOfMonth = new Date(displayMonth.getFullYear(), displayMonth.getMonth() + 1, 0, 23, 59, 59).getTime();
+      list = list.filter(e => e.startTime >= startOfMonth && e.startTime <= endOfMonth);
+    }
     if (filterClientId !== 'all') {
       list = list.filter(e => e.clientId === filterClientId);
+    }
+    if (filterProjectId !== 'all') {
+      list = list.filter(e => e.projectId === filterProjectId);
+    }
+    if (filterCategory !== 'all') {
+      list = list.filter(e => (e.category || '') === filterCategory);
     }
     list.sort((a, b) => b.startTime - a.startTime);
     const groups: { [key: string]: { entries: TimeEntry[], totalDuration: number } } = {};
@@ -799,14 +977,14 @@ const LogsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({ s
       }
     });
     return groups;
-  }, [state.entries, filterClientId, displayMonth]);
+  }, [state.entries, filterClientId, filterProjectId, filterCategory, displayMonth, filterStartDate, filterEndDate, isDateFilterActive]);
 
   return (
     <div className="space-y-4 animate-fade-in pb-20">
       <div className="flex flex-col gap-4 px-1">
         <div className="flex justify-between items-center">
              <h2 className="text-lg font-black text-slate-800">稼働履歴</h2>
-             <div className="flex items-center bg-white rounded-xl border border-slate-200 p-1 shadow-sm">
+             <div className={`flex items-center bg-white rounded-xl border border-slate-200 p-1 shadow-sm transition-opacity ${isDateFilterActive ? 'opacity-40' : ''}`}>
                  <button onClick={handlePrevMonth} className="p-1 hover:bg-slate-100 rounded-lg"><ChevronLeft size={18} className="text-slate-500" /></button>
                  <span className="text-xs font-bold text-slate-800 px-3 min-w-[80px] text-center">
                      {displayMonth.getFullYear()}年{displayMonth.getMonth() + 1}月
@@ -814,9 +992,24 @@ const LogsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({ s
                  <button onClick={handleNextMonth} className="p-1 hover:bg-slate-100 rounded-lg"><ChevronRight size={18} className="text-slate-500" /></button>
              </div>
         </div>
-        
+
+        <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 bg-white rounded-xl border border-slate-200 px-3 py-1.5 shadow-sm">
+                <Calendar size={14} className="text-slate-400 shrink-0" />
+                <input type="date" value={filterStartDate} onChange={e => setFilterStartDate(e.target.value)} className="text-xs font-bold text-slate-700 outline-none bg-transparent w-[120px]" />
+                <span className="text-xs text-slate-400">〜</span>
+                <input type="date" value={filterEndDate} onChange={e => setFilterEndDate(e.target.value)} className="text-xs font-bold text-slate-700 outline-none bg-transparent w-[120px]" />
+            </div>
+            {isDateFilterActive && (
+                <button onClick={() => { setFilterStartDate(''); setFilterEndDate(''); }} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-500 transition-all">
+                    <X size={12} />
+                    クリア
+                </button>
+            )}
+        </div>
+
         <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
-           <button 
+           <button
              onClick={() => setFilterClientId('all')}
              className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-bold border transition-all ${filterClientId === 'all' ? 'bg-slate-800 text-white border-transparent' : 'bg-white border-slate-200 text-slate-500'}`}
            >
@@ -833,76 +1026,107 @@ const LogsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({ s
              </button>
            ))}
         </div>
-      </div>
 
-      <div className="space-y-6">
-        {Object.keys(entriesByDate).map(dateKey => {
-            const { entries, totalDuration } = entriesByDate[dateKey];
-            const totalHours = totalDuration / 3600000;
-            return (
-              <div key={dateKey} className="space-y-3">
-                <div className="sticky top-[72px] z-20 bg-[#F8F9FA]/95 backdrop-blur-md py-2 px-1 rounded-lg flex justify-between items-baseline border-b border-slate-200/50">
-                   <h3 className="text-sm font-black text-slate-700 tracking-tight">{dateKey}</h3>
-                   <div className="text-xs font-bold text-slate-400 bg-white px-2 py-0.5 rounded-md border border-slate-100">
-                      計 <span className="text-slate-800 font-black">{totalHours.toFixed(2)}</span> h
-                   </div>
-                </div>
-                
-                <div className="flex flex-col gap-3 pl-2 ml-2">
-                  {entries.map(e => {
-                    const client = state.clients.find(c => c.id === e.clientId);
-                    const duration = e.endTime ? (e.endTime - e.startTime) / 3600000 : 0;
-                    return (
-                      <div 
-                        key={e.id} 
-                        onClick={() => setEditingEntry(e)}
-                        className="bg-white p-4 rounded-xl shadow-sm relative overflow-hidden group transition-all duration-200 hover:shadow-md active:scale-[0.99] cursor-pointer"
-                      >
-                        <div className="relative z-10 pl-2">
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="flex-1 min-w-0">
-                                <div className="text-[10px] text-slate-400 font-mono font-bold mb-1 flex items-center gap-2">
-                                   <span>{new Date(e.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
-                                   <div className="h-px w-3 bg-slate-200"></div>
-                                   <span>{e.endTime ? new Date(e.endTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '継続中...'}</span>
-                                   <div className="ml-1 px-1.5 py-0.5 rounded bg-slate-100 flex items-center gap-1 text-[8px] uppercase tracking-wider text-slate-500">
-                                      {e.rateType === 'fixed' ? <Briefcase size={8} /> : <Clock size={8} />}
-                                      {e.rateType === 'fixed' ? 'FIXED' : 'HOURLY'}
-                                   </div>
-                                </div>
-                                <div className="text-sm font-bold text-slate-800 truncate mb-1 leading-snug">{e.description || '(内容未設定)'}</div>
-                                <div className="inline-flex items-center gap-1.5 mt-1">
-                                  <div className="w-8 h-6 rounded flex items-center justify-center text-[9px] font-bold text-white shadow-sm" style={{ backgroundColor: client?.color || '#ccc' }}>
-                                    {client?.name?.charAt(0) || '?'}
-                                  </div>
-                                  <span className="text-[10px] font-bold text-slate-500">{client?.name || '不明'}</span>
-                                </div>
-                              </div>
-                              <div className="flex flex-col items-end gap-1">
-                                <div className="text-lg font-black text-slate-700 tracking-tighter leading-none">{duration.toFixed(2)}<span className="text-[10px] font-bold text-slate-400 ml-0.5">h</span></div>
-                                {!e.endTime && <div className="w-2 h-2 rounded-full theme-bg animate-pulse"></div>}
-                              </div>
-                            </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-        })}
-        {Object.keys(entriesByDate).length === 0 && (
-          <div className="text-center py-10 bg-white rounded-3xl border-2 border-dashed border-slate-100 text-slate-400 text-xs">
-            {displayMonth.getFullYear()}年{displayMonth.getMonth() + 1}月の履歴はありません
+        {/* Project filter chips */}
+        {filterClientId !== 'all' && filterClientProjects.length > 0 && (
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+            <span className="text-[10px] font-bold text-slate-400 shrink-0">案件:</span>
+            <button onClick={() => setFilterProjectId('all')} className={`shrink-0 px-3 py-1 rounded-full text-[10px] font-bold border transition-all ${filterProjectId === 'all' ? 'bg-slate-700 text-white border-transparent' : 'bg-white border-slate-200 text-slate-500'}`}>すべて</button>
+            {filterClientProjects.map(p => (
+              <button key={p.id} onClick={() => setFilterProjectId(p.id)} className={`shrink-0 px-3 py-1 rounded-full text-[10px] font-bold border transition-all ${filterProjectId === p.id ? 'bg-slate-700 text-white border-transparent' : 'bg-white border-slate-200 text-slate-500'}`}>{p.name}</button>
+            ))}
+          </div>
+        )}
+
+        {/* Category filter chips */}
+        {allCategories.length > 0 && (
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+            <span className="text-[10px] font-bold text-slate-400 shrink-0">カテゴリ:</span>
+            <button onClick={() => setFilterCategory('all')} className={`shrink-0 px-3 py-1 rounded-full text-[10px] font-bold border transition-all ${filterCategory === 'all' ? 'bg-slate-700 text-white border-transparent' : 'bg-white border-slate-200 text-slate-500'}`}>すべて</button>
+            {allCategories.map(cat => (
+              <button key={cat} onClick={() => setFilterCategory(cat)} className={`shrink-0 px-3 py-1 rounded-full text-[10px] font-bold border transition-all ${filterCategory === cat ? 'bg-slate-700 text-white border-transparent' : 'bg-white border-slate-200 text-slate-500'}`}>{cat}</button>
+            ))}
           </div>
         )}
       </div>
 
-      <EditEntryDrawer 
+      <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 border-r border-slate-200 whitespace-nowrap">日付</th>
+                <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 border-r border-slate-200 whitespace-nowrap">開始</th>
+                <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 border-r border-slate-200 whitespace-nowrap">終了</th>
+                <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 border-r border-slate-200 whitespace-nowrap">時間(h)</th>
+                <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 border-r border-slate-200 whitespace-nowrap">クライアント</th>
+                <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 border-r border-slate-200 whitespace-nowrap">案件</th>
+                <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 border-r border-slate-200 whitespace-nowrap">カテゴリ</th>
+                <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 border-r border-slate-200 whitespace-nowrap">種別</th>
+                <th className="text-left px-3 py-2 text-xs font-bold text-slate-500">内容</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.keys(entriesByDate).map(dateKey => {
+                const { entries, totalDuration } = entriesByDate[dateKey];
+                const totalHours = totalDuration / 3600000;
+                return (
+                  <React.Fragment key={dateKey}>
+                    {entries.map((e, i) => {
+                      const client = state.clients.find(c => c.id === e.clientId);
+                      const project = e.projectId ? client?.projects?.find(p => p.id === e.projectId) : null;
+                      const duration = e.endTime ? (e.endTime - e.startTime) / 3600000 : 0;
+                      const dateStr = new Date(e.startTime).toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit', weekday: 'short' });
+                      return (
+                        <tr
+                          key={e.id}
+                          onClick={() => setEditingEntry(e)}
+                          className="border-b border-slate-100 hover:bg-blue-50/50 cursor-pointer transition-colors"
+                        >
+                          <td className="px-3 py-2 text-xs font-medium text-slate-700 border-r border-slate-100 whitespace-nowrap">{i === 0 ? dateStr : ''}</td>
+                          <td className="px-3 py-2 text-xs font-mono text-slate-600 border-r border-slate-100 whitespace-nowrap">{new Date(e.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</td>
+                          <td className="px-3 py-2 text-xs font-mono text-slate-600 border-r border-slate-100 whitespace-nowrap">{e.endTime ? new Date(e.endTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : <span className="text-green-500 font-bold">稼働中</span>}</td>
+                          <td className="px-3 py-2 text-xs font-bold text-slate-800 border-r border-slate-100 text-right whitespace-nowrap">{e.endTime ? duration.toFixed(2) : '-'}</td>
+                          <td className="px-3 py-2 border-r border-slate-100 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: client?.color || '#ccc' }}></div>
+                              <span className="text-xs text-slate-700">{client?.name || '不明'}</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-xs text-slate-500 border-r border-slate-100 whitespace-nowrap">{project?.name || '-'}</td>
+                          <td className="px-3 py-2 text-xs text-slate-500 border-r border-slate-100 whitespace-nowrap">{e.category || '-'}</td>
+                          <td className="px-3 py-2 text-xs text-slate-500 border-r border-slate-100 whitespace-nowrap">{e.rateType === 'fixed' ? '固定' : '時給'}</td>
+                          <td className="px-3 py-2 text-xs text-slate-700 max-w-[200px] truncate">{e.description || '(未設定)'}</td>
+                        </tr>
+                      );
+                    })}
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                      <td className="px-3 py-1.5 text-xs font-bold text-slate-500 border-r border-slate-100" colSpan={3}>小計</td>
+                      <td className="px-3 py-1.5 text-xs font-black text-slate-800 border-r border-slate-100 text-right">{totalHours.toFixed(2)}</td>
+                      <td colSpan={5}></td>
+                    </tr>
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {Object.keys(entriesByDate).length === 0 && (
+          <div className="text-center py-10 text-slate-400 text-xs">
+            {isDateFilterActive
+              ? '指定された期間の履歴はありません'
+              : `${displayMonth.getFullYear()}年${displayMonth.getMonth() + 1}月の履歴はありません`
+            }
+          </div>
+        )}
+      </div>
+
+      <EditEntryDrawer
          isOpen={!!editingEntry}
          onClose={() => setEditingEntry(null)}
          entry={editingEntry}
          clients={state.clients}
+         allEntries={state.entries}
          onSave={(id, updates) => dispatch({type: 'UPDATE_ENTRY', payload: {id, ...updates}})}
          onDelete={(id) => dispatch({type: 'DELETE_ENTRY', payload: id})}
       />
@@ -911,6 +1135,7 @@ const LogsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({ s
 };
 
 const ReportPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({ state, dispatch }) => {
+  const { user: reportUser } = useAuth();
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     d.setDate(1);
@@ -924,20 +1149,31 @@ const ReportPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({
   const [selectedClientId, setSelectedClientId] = useState(() => state.clients.length > 0 ? state.clients[0].id : '');
   const [reportTitle, setReportTitle] = useState('作業報告書');
   const [reportBusinessName, setReportBusinessName] = useState('');
-  const [customUserName, setCustomUserName] = useState(state.settings.userName || 'Logmee User');
+  const googleName = reportUser?.user_metadata?.full_name || reportUser?.user_metadata?.name || '';
+  const [customUserName, setCustomUserName] = useState(
+    (state.settings.userName && state.settings.userName !== 'Freelancer') ? state.settings.userName : googleName || state.settings.userName || 'Logmee User'
+  );
   const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [groupByDate, setGroupByDate] = useState(false);
   const [showTimeRange, setShowTimeRange] = useState(true);
   const [showDuration, setShowDuration] = useState(true);
+  const [showProject, setShowProject] = useState(true);
+  const [showCategory, setShowCategory] = useState(true);
   const [showTotalHoursOnly, setShowTotalHoursOnly] = useState(true);
+  const [showRevenue, setShowRevenue] = useState(true);
+  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
+  const [includeNoProject, setIncludeNoProject] = useState(true);
 
   const [showPreview, setShowPreview] = useState(false);
   const [previewData, setPreviewData] = useState<any>(null);
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
 
   useEffect(() => {
-      setCustomUserName(state.settings.userName || 'Logmee User');
-  }, [state.settings.userName]);
+      const gName = reportUser?.user_metadata?.full_name || reportUser?.user_metadata?.name || '';
+      setCustomUserName(
+        (state.settings.userName && state.settings.userName !== 'Freelancer') ? state.settings.userName : gName || state.settings.userName || 'Logmee User'
+      );
+  }, [state.settings.userName, reportUser]);
 
   useEffect(() => {
       if (selectedClientId === 'all' || selectedClientId === '') {
@@ -946,6 +1182,13 @@ const ReportPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({
           setSelectedClientId(state.clients[0].id);
       }
   }, [state.clients, selectedClientId]);
+
+  // クライアント変更時に案件フィルタをリセット（全選択）
+  useEffect(() => {
+      const client = state.clients.find(c => c.id === selectedClientId);
+      setSelectedProjectIds((client?.projects || []).map(p => p.id));
+      setIncludeNoProject(true);
+  }, [selectedClientId, state.clients]);
 
   const handleSetDateRange = (type: 'thisMonth' | 'lastMonth') => {
       const today = new Date();
@@ -996,12 +1239,22 @@ const ReportPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({
         const entryDate = new Date(entry.startTime);
         const matchesClient = entry.clientId === selectedClientId;
         const inRange = entryDate >= sDate && entryDate <= eDate;
-        return matchesClient && inRange;
+        if (!matchesClient || !inRange) return false;
+        // 案件フィルタ
+        if (entry.projectId) {
+            return selectedProjectIds.includes(entry.projectId);
+        } else {
+            return includeNoProject;
+        }
     }).sort((a,b) => a.startTime - b.startTime);
-  }, [state.entries, startDate, endDate, selectedClientId]);
+  }, [state.entries, startDate, endDate, selectedClientId, selectedProjectIds, includeNoProject]);
 
   const handlePreviewReport = () => {
-    let processedEntries = [...filteredEntriesRaw];
+    const client = state.clients.find(c => c.id === selectedClientId);
+    let processedEntries = filteredEntriesRaw.map(e => {
+        const proj = e.projectId ? client?.projects?.find(p => p.id === e.projectId) : null;
+        return { ...e, projectName: proj?.name || '' };
+    });
     if (groupByDate) {
         const groups: {[key: string]: any} = {};
         processedEntries.forEach(e => {
@@ -1025,7 +1278,6 @@ const ReportPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({
         })).sort((a: any, b: any) => a.startTime - b.startTime);
     }
     const totalHours = processedEntries.reduce((acc, curr) => acc + (groupByDate ? (curr.duration / 3600000) : ((curr.endTime! - curr.startTime) / 3600000)), 0);
-    const client = state.clients.find(c => c.id === selectedClientId);
 
     // 期間内の月次固定報酬を取得
     const sDateObj = new Date(startDate);
@@ -1038,14 +1290,19 @@ const ReportPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({
         currentDate.setMonth(currentDate.getMonth() + 1);
     }
     const fixedFeeForPeriod = state.monthlyFixedFees
-        .filter(f => f.clientId === selectedClientId && monthsInRange.includes(f.yearMonth))
+        .filter(f => {
+            const proj = client?.projects?.find((p: Project) => p.id === f.projectId);
+            return proj && proj.clientId === selectedClientId && monthsInRange.includes(f.yearMonth);
+        })
         .reduce((sum, f) => sum + f.amount, 0);
 
-    // 時給ベースの売上計算
+    // 時給ベースの売上計算（クライアントの時給のみ使用）
     let hourlyRevenue = 0;
-    if (client?.defaultHourlyRate) {
-        hourlyRevenue = totalHours * client.defaultHourlyRate;
-    }
+    const rate = client?.defaultHourlyRate || 0;
+    processedEntries.forEach(pe => {
+        const hrs = groupByDate ? ((pe as any).duration / 3600000) : ((pe.endTime! - pe.startTime) / 3600000);
+        hourlyRevenue += Math.floor(hrs * rate);
+    });
 
     setPreviewData({
         clientName: client?.name || 'クライアント',
@@ -1066,7 +1323,10 @@ const ReportPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({
             groupByDate,
             showTimeRange,
             showDuration,
-            showTotalHoursOnly
+            showProject,
+            showCategory,
+            showTotalHoursOnly,
+            showRevenue
         }
     });
     setShowPreview(true);
@@ -1080,59 +1340,69 @@ const ReportPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({
      }
      const content = document.getElementById('printable-content');
      if (!content) return;
-     printWindow.document.write(`
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <title>${previewData?.options?.title || 'Report'}</title>
-            <style>
-               @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap');
-               body { background: white; margin: 0; padding: 20px; font-family: "Noto Sans JP", sans-serif; color: #000; font-size: 10pt; }
-               .font-bold { font-weight: 700; }
-               .text-right { text-align: right; }
-               .text-center { text-align: center; }
-               .flex { display: flex; }
-               .justify-between { justify-content: space-between; }
-               .items-end { align-items: flex-end; }
-               .items-center { align-items: center; }
-               .w-full { width: 100%; }
-               .mb-1 { margin-bottom: 0.25rem; }
-               .mb-2 { margin-bottom: 0.5rem; }
-               .mb-4 { margin-bottom: 1rem; }
-               .mb-8 { margin-bottom: 2rem; }
-               .pb-2 { padding-bottom: 0.5rem; }
-               .pb-4 { padding-bottom: 1rem; }
-               .mt-2 { margin-top: 0.5rem; }
-               .mt-8 { margin-top: 2rem; }
-               .border-b { border-bottom: 1px solid #e5e7eb; }
-               .border-b-2 { border-bottom: 2px solid #000; }
-               .border-black { border-color: #000; }
-               .text-2xl { font-size: 1.5rem; line-height: 2rem; }
-               .text-lg { font-size: 1.125rem; line-height: 1.75rem; }
-               .text-sm { font-size: 0.875rem; }
-               .text-xs { font-size: 0.75rem; }
-               .text-gray-500 { color: #6b7280; }
-               .bg-gray-50 { background-color: #f9fafb; }
-               .p-4 { padding: 1rem; }
-               .rounded-lg { border-radius: 0.5rem; }
-               .border { border: 1px solid #e5e7eb; }
-               .table-row { display: flex; padding: 6px 0; border-bottom: 1px dashed #ddd; break-inside: avoid; }
-               .table-header { display: flex; border-bottom: 1px solid #aaa; padding-bottom: 4px; font-weight: bold; font-size: 9pt; color: #555; text-transform: uppercase; }
-               .col-date { width: 100px; flex-shrink: 0; font-family: monospace; }
-               .col-time { width: 90px; flex-shrink: 0; font-family: monospace; font-size: 8pt; color: #555; }
-               .col-desc { flex: 1; padding: 0 8px; }
-               .col-dur { width: 60px; text-align: right; font-family: monospace; font-weight: bold; }
-               .no-print { display: none; }
-               @media print { @page { margin: 15mm; } body { padding: 0; } .no-print { display: none !important; } }
-            </style>
-          </head>
-          <body>
-            ${content.innerHTML}
-            <script>setTimeout(() => { window.print(); }, 500);</script>
-          </body>
-        </html>
-     `);
+     const htmlContent = `<!DOCTYPE html>
+<html>
+  <head>
+    <title>${previewData?.options?.title || 'Report'}</title>
+    <style>
+       @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap');
+       body { background: white; margin: 0; padding: 20px; font-family: "Noto Sans JP", sans-serif; color: #000; font-size: 10pt; }
+       .font-bold { font-weight: 700; }
+       .text-right { text-align: right; }
+       .text-center { text-align: center; }
+       .flex { display: flex; }
+       .justify-between { justify-content: space-between; }
+       .items-end { align-items: flex-end; }
+       .items-center { align-items: center; }
+       .w-full { width: 100%; }
+       .mb-1 { margin-bottom: 0.25rem; }
+       .mb-2 { margin-bottom: 0.5rem; }
+       .mb-4 { margin-bottom: 1rem; }
+       .mb-8 { margin-bottom: 2rem; }
+       .pb-2 { padding-bottom: 0.5rem; }
+       .pb-4 { padding-bottom: 1rem; }
+       .mt-2 { margin-top: 0.5rem; }
+       .mt-8 { margin-top: 2rem; }
+       .border-b { border-bottom: 1px solid #e5e7eb; }
+       .border-b-2 { border-bottom: 2px solid #000; }
+       .border-black { border-color: #000; }
+       .text-2xl { font-size: 1.5rem; line-height: 2rem; }
+       .text-lg { font-size: 1.125rem; line-height: 1.75rem; }
+       .text-sm { font-size: 0.875rem; }
+       .text-xs { font-size: 0.75rem; }
+       .text-gray-500 { color: #6b7280; }
+       .bg-gray-50 { background-color: #f9fafb; }
+       .p-4 { padding: 1rem; }
+       .rounded-lg { border-radius: 0.5rem; }
+       .border { border: 1px solid #e5e7eb; }
+       .table-row { display: flex; padding: 6px 0; border-bottom: 1px dashed #ddd; break-inside: avoid; }
+       .table-header { display: flex; border-bottom: 1px solid #aaa; padding-bottom: 4px; font-weight: bold; font-size: 9pt; color: #555; text-transform: uppercase; }
+       .col-date { width: 100px; flex-shrink: 0; font-family: monospace; }
+       .col-time { width: 90px; flex-shrink: 0; font-family: monospace; font-size: 8pt; color: #555; }
+       .col-desc { flex: 1; padding: 0 8px; }
+       .col-dur { width: 60px; text-align: right; font-family: monospace; font-weight: bold; }
+       .no-print { display: none; }
+       @media print { @page { margin: 15mm; } body { padding: 0; } .no-print { display: none !important; } }
+    </style>
+  </head>
+  <body>
+    ${content.innerHTML}
+  </body>
+</html>`;
+     printWindow.document.write(htmlContent.replace('</body>', '<script>setTimeout(() => { window.print(); }, 500);<\/script></body>'));
      printWindow.document.close();
+
+     // Save report snapshot
+     const savedReport: SavedReport = {
+       id: `sr_${Date.now()}`,
+       clientId: selectedClientId,
+       title: previewData?.options?.title || reportTitle,
+       periodStart: startDate,
+       periodEnd: endDate,
+       createdAt: Date.now(),
+       htmlContent
+     };
+     dispatch({ type: 'ADD_SAVED_REPORT', payload: savedReport });
   };
 
   const handleExportCSV = () => {
@@ -1166,6 +1436,59 @@ const ReportPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({
                 </Select>
               </div>
           </div>
+          {(() => {
+              const client = state.clients.find(c => c.id === selectedClientId);
+              const projects = client?.projects || [];
+              if (projects.length === 0) return null;
+              const allSelected = selectedProjectIds.length === projects.length && includeNoProject;
+              return (
+                  <div className="border-t border-slate-100 pt-4">
+                      <label className="text-[10px] font-black text-slate-400 ml-1 mb-3 block uppercase tracking-widest flex items-center gap-2">
+                          <Briefcase size={12}/> 対象案件
+                      </label>
+                      <div className="bg-slate-50 p-3 rounded-xl space-y-2">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                              <div className={`w-4 h-4 rounded border flex items-center justify-center ${allSelected ? 'bg-slate-800 border-slate-800' : 'bg-white border-slate-300'}`}>
+                                  {allSelected && <Check size={10} className="text-white" />}
+                              </div>
+                              <input type="checkbox" className="hidden" checked={allSelected} onChange={() => {
+                                  if (allSelected) {
+                                      setSelectedProjectIds([]);
+                                      setIncludeNoProject(false);
+                                  } else {
+                                      setSelectedProjectIds(projects.map(p => p.id));
+                                      setIncludeNoProject(true);
+                                  }
+                              }} />
+                              <span className="text-xs font-bold text-slate-700">すべて選択</span>
+                          </label>
+                          <div className="border-t border-slate-200 pt-2 space-y-1">
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                  <div className={`w-4 h-4 rounded border flex items-center justify-center ${includeNoProject ? 'bg-slate-800 border-slate-800' : 'bg-white border-slate-300'}`}>
+                                      {includeNoProject && <Check size={10} className="text-white" />}
+                                  </div>
+                                  <input type="checkbox" className="hidden" checked={includeNoProject} onChange={e => setIncludeNoProject(e.target.checked)} />
+                                  <span className="text-xs font-bold text-slate-500">案件なし（全般）</span>
+                              </label>
+                              {projects.map(p => {
+                                  const checked = selectedProjectIds.includes(p.id);
+                                  return (
+                                      <label key={p.id} className="flex items-center gap-2 cursor-pointer">
+                                          <div className={`w-4 h-4 rounded border flex items-center justify-center ${checked ? 'bg-slate-800 border-slate-800' : 'bg-white border-slate-300'}`}>
+                                              {checked && <Check size={10} className="text-white" />}
+                                          </div>
+                                          <input type="checkbox" className="hidden" checked={checked} onChange={() => {
+                                              setSelectedProjectIds(prev => checked ? prev.filter(id => id !== p.id) : [...prev, p.id]);
+                                          }} />
+                                          <span className="text-xs font-bold text-slate-700">{p.name}</span>
+                                      </label>
+                                  );
+                              })}
+                          </div>
+                      </div>
+                  </div>
+              );
+          })()}
           <div className="border-t border-slate-100 pt-4">
              <label className="text-[10px] font-black text-slate-400 ml-1 mb-3 block uppercase tracking-widest flex items-center gap-2">
                  <FileText size={12}/> 書類設定
@@ -1225,12 +1548,33 @@ const ReportPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({
                              <input type="checkbox" className="hidden" checked={showDuration} onChange={e => setShowDuration(e.target.checked)} />
                              <span className="text-xs font-bold text-slate-700">所要時間</span>
                          </label>
-                         <label className="flex items-center gap-2 cursor-pointer col-span-2 mt-1">
+                         <label className="flex items-center gap-2 cursor-pointer">
+                             <div className={`w-4 h-4 rounded border flex items-center justify-center ${showProject ? 'bg-slate-800 border-slate-800' : 'bg-white border-slate-300'}`}>
+                                 {showProject && <Check size={10} className="text-white" />}
+                             </div>
+                             <input type="checkbox" className="hidden" checked={showProject} onChange={e => setShowProject(e.target.checked)} />
+                             <span className="text-xs font-bold text-slate-700">案件</span>
+                         </label>
+                         <label className="flex items-center gap-2 cursor-pointer">
+                             <div className={`w-4 h-4 rounded border flex items-center justify-center ${showCategory ? 'bg-slate-800 border-slate-800' : 'bg-white border-slate-300'}`}>
+                                 {showCategory && <Check size={10} className="text-white" />}
+                             </div>
+                             <input type="checkbox" className="hidden" checked={showCategory} onChange={e => setShowCategory(e.target.checked)} />
+                             <span className="text-xs font-bold text-slate-700">カテゴリ</span>
+                         </label>
+                         <label className="flex items-center gap-2 cursor-pointer">
                              <div className={`w-4 h-4 rounded border flex items-center justify-center ${showTotalHoursOnly ? 'bg-slate-800 border-slate-800' : 'bg-white border-slate-300'}`}>
                                  {showTotalHoursOnly && <Check size={10} className="text-white" />}
                              </div>
                              <input type="checkbox" className="hidden" checked={showTotalHoursOnly} onChange={e => setShowTotalHoursOnly(e.target.checked)} />
-                             <span className="text-xs font-bold text-slate-700">合計時間を記載する</span>
+                             <span className="text-xs font-bold text-slate-700">合計時間</span>
+                         </label>
+                         <label className="flex items-center gap-2 cursor-pointer">
+                             <div className={`w-4 h-4 rounded border flex items-center justify-center ${showRevenue ? 'bg-slate-800 border-slate-800' : 'bg-white border-slate-300'}`}>
+                                 {showRevenue && <Check size={10} className="text-white" />}
+                             </div>
+                             <input type="checkbox" className="hidden" checked={showRevenue} onChange={e => setShowRevenue(e.target.checked)} />
+                             <span className="text-xs font-bold text-slate-700">金額</span>
                          </label>
                      </div>
                  </div>
@@ -1247,29 +1591,69 @@ const ReportPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({
       </Card>
       <div className="mt-8">
           <h3 className="text-xs font-black text-slate-400 ml-1 mb-3 uppercase tracking-widest">対象期間の作業一覧 (タップして編集)</h3>
-          {filteredEntriesRaw.length > 0 ? (
-              <div className="bg-white rounded-3xl overflow-hidden shadow-sm">
-                  {filteredEntriesRaw.map((e, i) => (
-                      <div key={e.id} onClick={() => setEditingEntry(e)} className={`flex items-center justify-between p-4 cursor-pointer hover:bg-slate-50 transition-colors ${i !== filteredEntriesRaw.length - 1 ? 'border-b border-slate-100' : ''}`}>
-                          <div className="flex-1 min-w-0">
-                              <div className="text-[10px] text-slate-400 font-bold mb-0.5">
-                                  {new Date(e.startTime).toLocaleDateString('ja-JP')} <span className="text-slate-300">|</span> {new Date(e.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} - {e.endTime ? new Date(e.endTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '...'}
-                              </div>
-                              <div className="text-sm font-bold text-slate-800 truncate">{e.description || '(内容未設定)'}</div>
-                          </div>
-                          <div className="text-right pl-4">
-                              <div className="text-sm font-black text-slate-700">
-                                  {((e.endTime ? (e.endTime - e.startTime) : 0) / 3600000).toFixed(2)}h
-                              </div>
-                          </div>
-                      </div>
-                  ))}
-              </div>
-          ) : (
-              <div className="text-center py-8 bg-slate-50 rounded-3xl border border-dashed border-slate-200 text-slate-400 text-xs font-bold">対象期間に履歴がありません</div>
-          )}
+          <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200">
+                    <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 border-r border-slate-200 whitespace-nowrap">日付</th>
+                    <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 border-r border-slate-200 whitespace-nowrap">開始</th>
+                    <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 border-r border-slate-200 whitespace-nowrap">終了</th>
+                    <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 border-r border-slate-200 whitespace-nowrap">時間(h)</th>
+                    <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 border-r border-slate-200 whitespace-nowrap">案件</th>
+                    <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 border-r border-slate-200 whitespace-nowrap">カテゴリ</th>
+                    <th className="text-left px-3 py-2 text-xs font-bold text-slate-500">内容</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredEntriesRaw.length > 0 ? (
+                    (() => {
+                      const reportClient = state.clients.find(c => c.id === selectedClientId);
+                      let lastDate = '';
+                      return filteredEntriesRaw.map(e => {
+                        const project = e.projectId ? reportClient?.projects?.find(p => p.id === e.projectId) : null;
+                        const duration = e.endTime ? (e.endTime - e.startTime) / 3600000 : 0;
+                        const dateStr = new Date(e.startTime).toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit', weekday: 'short' });
+                        const showDate = dateStr !== lastDate;
+                        lastDate = dateStr;
+                        return (
+                          <tr
+                            key={e.id}
+                            onClick={() => setEditingEntry(e)}
+                            className="border-b border-slate-100 hover:bg-blue-50/50 cursor-pointer transition-colors"
+                          >
+                            <td className="px-3 py-2 text-xs font-medium text-slate-700 border-r border-slate-100 whitespace-nowrap">{showDate ? dateStr : ''}</td>
+                            <td className="px-3 py-2 text-xs font-mono text-slate-600 border-r border-slate-100 whitespace-nowrap">{new Date(e.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</td>
+                            <td className="px-3 py-2 text-xs font-mono text-slate-600 border-r border-slate-100 whitespace-nowrap">{e.endTime ? new Date(e.endTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '-'}</td>
+                            <td className="px-3 py-2 text-xs font-bold text-slate-800 border-r border-slate-100 text-right whitespace-nowrap">{e.endTime ? duration.toFixed(2) : '-'}</td>
+                            <td className="px-3 py-2 text-xs text-slate-500 border-r border-slate-100 whitespace-nowrap">{project?.name || '-'}</td>
+                            <td className="px-3 py-2 text-xs text-slate-500 border-r border-slate-100 whitespace-nowrap">{e.category || '-'}</td>
+                            <td className="px-3 py-2 text-xs text-slate-700 max-w-[200px] truncate">{e.description || '(未設定)'}</td>
+                          </tr>
+                        );
+                      });
+                    })()
+                  ) : null}
+                </tbody>
+                {filteredEntriesRaw.length > 0 && (
+                  <tfoot>
+                    <tr className="bg-slate-50 border-t border-slate-200">
+                      <td className="px-3 py-1.5 text-xs font-bold text-slate-500 border-r border-slate-100" colSpan={3}>合計</td>
+                      <td className="px-3 py-1.5 text-xs font-black text-slate-800 border-r border-slate-100 text-right">
+                        {(filteredEntriesRaw.reduce((sum, e) => sum + (e.endTime ? (e.endTime - e.startTime) / 3600000 : 0), 0)).toFixed(2)}
+                      </td>
+                      <td colSpan={3}></td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+            {filteredEntriesRaw.length === 0 && (
+              <div className="text-center py-10 text-slate-400 text-xs font-bold">対象期間に履歴がありません</div>
+            )}
+          </div>
       </div>
-      <EditEntryDrawer isOpen={!!editingEntry} onClose={() => setEditingEntry(null)} entry={editingEntry} clients={state.clients} onSave={(id, updates) => dispatch({type: 'UPDATE_ENTRY', payload: {id, ...updates}})} onDelete={(id) => dispatch({type: 'DELETE_ENTRY', payload: id})} />
+      <EditEntryDrawer isOpen={!!editingEntry} onClose={() => setEditingEntry(null)} entry={editingEntry} clients={state.clients} allEntries={state.entries} onSave={(id, updates) => dispatch({type: 'UPDATE_ENTRY', payload: {id, ...updates}})} onDelete={(id) => dispatch({type: 'DELETE_ENTRY', payload: id})} />
       {showPreview && previewData && (
          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
             <div className="bg-white w-full max-w-2xl max-h-[90vh] rounded-xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
@@ -1303,7 +1687,7 @@ const ReportPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({
                                    <div className="font-bold text-black text-lg">稼働時間合計</div>
                                    <div className="text-right text-black text-lg font-bold">{previewData.totalHours.toFixed(2)} h</div>
                                 </div>
-                                {(previewData.hourlyRevenue > 0 || previewData.fixedFee > 0) && (
+                                {previewData.options.showRevenue && (previewData.hourlyRevenue > 0 || previewData.fixedFee > 0) && (
                                     <div className="mt-4 p-4 bg-gray-50 rounded-lg">
                                         {previewData.hourlyRevenue > 0 && (
                                             <div className="flex justify-between items-center text-sm mb-2">
@@ -1331,6 +1715,8 @@ const ReportPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({
                                 <div className="table-header">
                                     <div className="col-date">日付</div>
                                     {previewData.options.showTimeRange && <div className="col-time">時刻</div>}
+                                    {previewData.options.showProject && <div style={{width: '80px', flexShrink: 0, fontSize: '8pt'}}>案件</div>}
+                                    {previewData.options.showCategory && <div style={{width: '70px', flexShrink: 0, fontSize: '8pt'}}>カテゴリ</div>}
                                     <div className="col-desc">作業内容</div>
                                     {previewData.options.showDuration && <div className="col-dur">時間</div>}
                                 </div>
@@ -1341,6 +1727,8 @@ const ReportPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({
                                             {previewData.options.showTimeRange && (
                                                 <div className="col-time">{previewData.options.groupByDate ? '-' : `${new Date(e.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} - ${e.endTime ? new Date(e.endTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '...'}`}</div>
                                             )}
+                                            {previewData.options.showProject && <div style={{width: '80px', flexShrink: 0, fontSize: '8pt', padding: '0 4px'}}>{e.projectName || '-'}</div>}
+                                            {previewData.options.showCategory && <div style={{width: '70px', flexShrink: 0, fontSize: '8pt', padding: '0 4px'}}>{e.category || '-'}</div>}
                                             <div className="col-desc">{e.description || '(内容未設定)'}</div>
                                             {previewData.options.showDuration && (
                                                 <div className="col-dur">{(previewData.options.groupByDate ? (e.duration / 3600000) : ((e.endTime - e.startTime) / 3600000)).toFixed(2)} h</div>
@@ -1365,7 +1753,7 @@ const ReportPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({
 
 const Dashboard: React.FC<{
   state: AppState;
-  onStartTimer: (clientId: string, description: string, rateType?: 'hourly' | 'fixed') => void;
+  onStartTimer: (clientId: string, description: string, rateType?: 'hourly' | 'fixed', projectId?: string, category?: string) => void;
   onStopTimer: () => void;
   onUpdateDescription: (id: string, description: string) => void;
   onDeletePreset: (clientId: string, presetName: string) => void;
@@ -1383,8 +1771,11 @@ const Dashboard: React.FC<{
     }, [activeEntry]);
 
     const [selectedClientId, setSelectedClientId] = useState(state.clients.length > 0 ? state.clients[0].id : '');
+    const [selectedProjectId, setSelectedProjectId] = useState<string>('');
     const [description, setDescription] = useState('');
+    const [category, setCategory] = useState('');
     const [rateType, setRateType] = useState<'hourly' | 'fixed'>('hourly');
+    const [selectedPresets, setSelectedPresets] = useState<string[]>([]);
 
     useEffect(() => {
         if (state.clients.length > 0 && (!selectedClientId || !state.clients.find(c => c.id === selectedClientId))) {
@@ -1392,24 +1783,35 @@ const Dashboard: React.FC<{
         }
     }, [state.clients, selectedClientId]);
 
-    // クライアント変更時に報酬タイプを自動設定
+    // クライアント変更時に報酬タイプを自動設定 & プリセット選択をリセット
     useEffect(() => {
         const client = state.clients.find(c => c.id === selectedClientId);
         if (client) {
-            const hasHourly = !!client.defaultHourlyRate;
-            const hasFixed = !!client.defaultFixedFee;
-            if (hasFixed && !hasHourly) {
-                setRateType('fixed');
-            } else if (hasHourly && !hasFixed) {
+            if (!!client.defaultHourlyRate) {
                 setRateType('hourly');
             }
         }
+        setSelectedPresets([]);
+        setDescription('');
+        setSelectedProjectId('');
+        setCategory('');
     }, [selectedClientId, state.clients]);
+
+    // 案件選択時は固定報酬に自動設定
+    useEffect(() => {
+        if (!selectedProjectId) return;
+        setRateType('fixed');
+    }, [selectedProjectId]);
+
+    const selectedClient = state.clients.find(c => c.id === selectedClientId);
+    const clientCategories = selectedClient?.categories || [];
 
     const handleStart = () => {
         if (!selectedClientId) return;
-        onStartTimer(selectedClientId, description, rateType);
+        onStartTimer(selectedClientId, description, rateType, selectedProjectId || undefined, category || undefined);
         setDescription('');
+        setSelectedPresets([]);
+        setCategory('');
     };
 
     const todayTotal = useMemo(() => {
@@ -1430,13 +1832,14 @@ const Dashboard: React.FC<{
         let hours = 0;
         let revenue = 0;
 
-        // 時給ベースの収入を計算
+        // 時給ベースの収入を計算（クライアントの時給のみ使用）
         monthlyEntries.forEach(e => {
             const client = state.clients.find(c => c.id === e.clientId);
             const duration = ((e.endTime || Date.now()) - e.startTime) / 3600000;
             hours += duration;
-            if (client && client.defaultHourlyRate) {
-                revenue += duration * client.defaultHourlyRate;
+            const hourlyRate = client?.defaultHourlyRate;
+            if (hourlyRate) {
+                revenue += Math.floor(duration * hourlyRate);
             }
         });
 
@@ -1448,8 +1851,6 @@ const Dashboard: React.FC<{
 
         return { hours, revenue };
     }, [state.entries, state.clients, state.monthlyFixedFees, elapsed]);
-
-    const selectedClient = state.clients.find(c => c.id === selectedClientId);
 
     return (
         <div className="space-y-6 animate-fade-in pb-20">
@@ -1493,18 +1894,73 @@ const Dashboard: React.FC<{
                         <div className="relative z-10">
                              <div className="mb-6 px-1">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">CLIENT</label>
-                                <div className="relative">
-                                    <select value={selectedClientId} onChange={e => setSelectedClientId(e.target.value)} className="w-full bg-slate-800/50 text-white rounded-xl px-4 py-4 appearance-none font-bold outline-none focus:ring-2 focus:ring-slate-600 transition-all">
-                                        {state.clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                                        {state.clients.length === 0 && <option value="">クライアントを追加してください</option>}
-                                    </select>
-                                    <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none rotate-90" size={16} />
-                                </div>
+                                {state.clients.length === 0 ? (
+                                    <div className="text-xs text-slate-500 font-bold py-2">クライアントを追加してください</div>
+                                ) : (
+                                    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+                                        {state.clients.map(c => (
+                                            <button
+                                                key={c.id}
+                                                onClick={() => setSelectedClientId(c.id)}
+                                                className={`shrink-0 px-4 py-2.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-2 ${selectedClientId === c.id ? 'bg-white text-slate-900 border-transparent shadow-lg shadow-black/20' : 'bg-slate-800/50 text-slate-300 border-slate-700 hover:bg-slate-700/50'}`}
+                                            >
+                                                <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: c.color }}></div>
+                                                {c.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
                              </div>
+                             {/* Project selection */}
+                             {selectedClient && selectedClient.projects && selectedClient.projects.filter(p => p.isActive).length > 0 && (
+                               <div className="mb-4 px-1">
+                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">PROJECT</label>
+                                 <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+                                   <button
+                                     onClick={() => setSelectedProjectId('')}
+                                     className={`shrink-0 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${!selectedProjectId ? 'bg-slate-700 text-white border-transparent' : 'bg-slate-800/50 text-slate-400 border-slate-700 hover:bg-slate-700/50'}`}
+                                   >
+                                     全般
+                                   </button>
+                                   {selectedClient.projects.filter(p => p.isActive).map(p => (
+                                     <button
+                                       key={p.id}
+                                       onClick={() => setSelectedProjectId(p.id)}
+                                       className={`shrink-0 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${selectedProjectId === p.id ? 'bg-slate-700 text-white border-transparent' : 'bg-slate-800/50 text-slate-400 border-slate-700 hover:bg-slate-700/50'}`}
+                                     >
+                                       {p.name}
+                                     </button>
+                                   ))}
+                                 </div>
+                               </div>
+                             )}
                              <div className="mb-4 px-1">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">TASK</label>
-                                <input type="text" value={description} onChange={e => setDescription(e.target.value)} placeholder="作業内容を入力..." className="w-full bg-slate-800/50 text-white rounded-xl px-4 py-4 font-bold outline-none focus:ring-2 focus:ring-slate-600 transition-all placeholder-slate-600" />
+                                <input type="text" value={description} onChange={e => { setDescription(e.target.value); setSelectedPresets([]); }} placeholder="作業内容を入力..." className="w-full bg-slate-800/50 text-white rounded-xl px-4 py-4 font-bold outline-none focus:ring-2 focus:ring-slate-600 transition-all placeholder-slate-600" />
                              </div>
+                             {/* Category chip selection */}
+                             {clientCategories.length > 0 && (
+                             <div className="mb-4 px-1">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">CATEGORY</label>
+                                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+                                    <button
+                                        onClick={() => setCategory('')}
+                                        className={`shrink-0 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${!category ? 'bg-slate-700 text-white border-transparent' : 'bg-slate-800/50 text-slate-400 border-slate-700 hover:bg-slate-700/50'}`}
+                                    >
+                                        なし
+                                    </button>
+                                    {clientCategories.map(cat => (
+                                        <button
+                                            key={cat}
+                                            onClick={() => setCategory(cat)}
+                                            className={`shrink-0 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${category === cat ? 'bg-slate-700 text-white border-transparent' : 'bg-slate-800/50 text-slate-400 border-slate-700 hover:bg-slate-700/50'}`}
+                                        >
+                                            {cat}
+                                        </button>
+                                    ))}
+                                </div>
+                             </div>
+                             )}
                              <div className="mb-6 px-1 flex items-center gap-3">
                                 <span className="text-[10px] font-bold text-slate-500">報酬:</span>
                                 <div className="flex gap-1">
@@ -1529,12 +1985,22 @@ const Dashboard: React.FC<{
                 <div className="px-1">
                     <h3 className="text-xs font-black text-slate-400 mb-3 uppercase tracking-widest flex items-center gap-2"><Flame size={14} className="text-orange-400" /> よく使うタスク ({selectedClient.name})</h3>
                     <div className="flex flex-wrap gap-2">
-                        {selectedClient.taskPresets.map((preset, idx) => (
-                            <button key={`${preset}-${idx}`} onClick={() => setDescription(preset)} className="bg-white px-4 py-3 rounded-xl shadow-sm border border-slate-100 font-bold text-slate-700 text-sm hover:shadow-md hover:border-slate-200 active:scale-95 transition-all flex items-center gap-2 group">
-                                <span>{preset}</span>
-                                <span onClick={(e) => { e.stopPropagation(); onDeletePreset(selectedClient.id, preset); }} className="opacity-0 group-hover:opacity-100 hover:bg-slate-100 p-1 rounded-full transition-all"><X size={12} className="text-slate-400" /></span>
-                            </button>
-                        ))}
+                        {selectedClient.taskPresets.map((preset, idx) => {
+                            const isSelected = selectedPresets.includes(preset);
+                            return (
+                                <button key={`${preset}-${idx}`} onClick={() => {
+                                    const next = isSelected
+                                        ? selectedPresets.filter(p => p !== preset)
+                                        : [...selectedPresets, preset];
+                                    setSelectedPresets(next);
+                                    setDescription(next.join(', '));
+                                }} className={`px-4 py-3 rounded-xl shadow-sm border font-bold text-sm active:scale-95 transition-all flex items-center gap-2 group ${isSelected ? 'theme-bg contrast-text border-transparent shadow-md' : 'bg-white border-slate-100 text-slate-700 hover:shadow-md hover:border-slate-200'}`}>
+                                    {isSelected && <Check size={14} />}
+                                    <span>{preset}</span>
+                                    <span onClick={(e) => { e.stopPropagation(); onDeletePreset(selectedClient.id, preset); setSelectedPresets(prev => prev.filter(p => p !== preset)); }} className="opacity-0 group-hover:opacity-100 hover:bg-slate-100 p-1 rounded-full transition-all"><X size={12} className={isSelected ? 'text-current opacity-60' : 'text-slate-400'} /></span>
+                                </button>
+                            );
+                        })}
                     </div>
                 </div>
             )}
@@ -1542,14 +2008,16 @@ const Dashboard: React.FC<{
     );
 };
 
-const ClientsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({ state, dispatch }) => {
+// --- Projects Page ---
+const ProjectsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({ state, dispatch }) => {
     const [isFormOpen, setIsFormOpen] = useState(false);
-    const [editingClient, setEditingClient] = useState<Client | null>(null);
-    const [name, setName] = useState('');
-    const [color, setColor] = useState(STYLISH_COLORS[0]);
-    const [hourlyRate, setHourlyRate] = useState('');
-    const [fixedFee, setFixedFee] = useState('');
-    const [closingDate, setClosingDate] = useState('99');
+    const [editingProject, setEditingProject] = useState<Project | null>(null);
+    const [projectName, setProjectName] = useState('');
+    const [projectClientId, setProjectClientId] = useState('');
+    const [projectFixedFee, setProjectFixedFee] = useState('');
+    const [filterClientId, setFilterClientId] = useState('all');
+    const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'completed'>('all');
+    const [searchText, setSearchText] = useState('');
 
     // 月次固定報酬管理
     const currentYearMonth = useMemo(() => {
@@ -1557,29 +2025,6 @@ const ClientsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = (
         return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     }, []);
     const [selectedYearMonth, setSelectedYearMonth] = useState(currentYearMonth);
-
-    const clientsWithFixedFee = state.clients.filter(c => c.defaultFixedFee && c.defaultFixedFee > 0);
-
-    const getMonthlyFee = (clientId: string, yearMonth: string) => {
-        return state.monthlyFixedFees.find(f => f.clientId === clientId && f.yearMonth === yearMonth);
-    };
-
-    const toggleMonthlyFee = (client: Client) => {
-        const existing = getMonthlyFee(client.id, selectedYearMonth);
-        if (existing) {
-            dispatch({ type: 'DELETE_MONTHLY_FIXED_FEE', payload: existing.id });
-        } else {
-            dispatch({
-                type: 'ADD_MONTHLY_FIXED_FEE',
-                payload: {
-                    id: `mf_${Date.now()}`,
-                    clientId: client.id,
-                    yearMonth: selectedYearMonth,
-                    amount: client.defaultFixedFee || 0
-                }
-            });
-        }
-    };
 
     const getYearMonthOptions = () => {
         const options = [];
@@ -1592,84 +2037,210 @@ const ClientsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = (
         }
         return options;
     };
+
     useEffect(() => {
-        if (editingClient) {
-            setName(editingClient.name);
-            setColor(editingClient.color);
-            setHourlyRate(editingClient.defaultHourlyRate?.toString() || '');
-            setFixedFee(editingClient.defaultFixedFee?.toString() || '');
-            setClosingDate(editingClient.closingDate?.toString() || '99');
+        if (editingProject) {
+            setProjectName(editingProject.name);
+            setProjectClientId(editingProject.clientId);
+            setProjectFixedFee(editingProject.fixedFee?.toString() || '0');
         } else {
-            setName('');
-            setColor(getNextStylishColor(state.clients.map(c => c.color)));
-            setHourlyRate('');
-            setFixedFee('');
-            setClosingDate('99');
+            setProjectName('');
+            setProjectClientId(state.clients.length > 0 ? state.clients[0].id : '');
+            setProjectFixedFee('');
         }
-    }, [editingClient, isFormOpen, state.clients]);
+    }, [editingProject, isFormOpen, state.clients]);
+
+    const allProjects = useMemo(() => {
+        return state.clients.flatMap(c => (c.projects || []).map(p => ({ ...p, clientName: c.name, clientColor: c.color })));
+    }, [state.clients]);
+
+    const filteredProjects = useMemo(() => {
+        let result = allProjects;
+        if (filterClientId !== 'all') {
+            result = result.filter(p => p.clientId === filterClientId);
+        }
+        if (filterStatus === 'active') {
+            result = result.filter(p => p.isActive);
+        } else if (filterStatus === 'completed') {
+            result = result.filter(p => !p.isActive);
+        }
+        if (searchText.trim()) {
+            const q = searchText.trim().toLowerCase();
+            result = result.filter(p => p.name.toLowerCase().includes(q) || p.clientName.toLowerCase().includes(q));
+        }
+        return result;
+    }, [allProjects, filterClientId, filterStatus, searchText]);
+
+    // 月次報酬管理: アクティブ案件（フィルタ連動）
+    const activeProjectsForFee = useMemo(() => {
+        let result = allProjects.filter(p => p.isActive && p.fixedFee > 0);
+        if (filterClientId !== 'all') {
+            result = result.filter(p => p.clientId === filterClientId);
+        }
+        return result;
+    }, [allProjects, filterClientId]);
+
+    const getMonthlyFee = (projectId: string, yearMonth: string) => {
+        return state.monthlyFixedFees.find(f => f.projectId === projectId && f.yearMonth === yearMonth);
+    };
+
+    const toggleMonthlyFee = (project: Project) => {
+        const existing = state.monthlyFixedFees.find(
+            f => f.projectId === project.id && f.yearMonth === selectedYearMonth
+        );
+        if (existing) {
+            dispatch({ type: 'DELETE_MONTHLY_FIXED_FEE', payload: existing.id });
+        } else {
+            dispatch({
+                type: 'ADD_MONTHLY_FIXED_FEE',
+                payload: {
+                    id: `mf_${Date.now()}`,
+                    projectId: project.id,
+                    yearMonth: selectedYearMonth,
+                    amount: project.fixedFee
+                }
+            });
+        }
+    };
+
     const handleSubmit = () => {
-        if (!name) return;
-        const payload = {
-            id: editingClient ? editingClient.id : `c_${Date.now()}`,
-            name,
-            color,
-            defaultHourlyRate: Number(hourlyRate),
-            defaultFixedFee: Number(fixedFee),
-            closingDate: Number(closingDate),
-            taskPresets: editingClient ? editingClient.taskPresets : []
+        if (!projectName || !projectClientId) return;
+        const project: Project = {
+            id: editingProject ? editingProject.id : `p_${Date.now()}`,
+            clientId: projectClientId,
+            name: projectName,
+            fixedFee: projectFixedFee ? Number(projectFixedFee) : 0,
+            isActive: editingProject ? editingProject.isActive : true
         };
-        if (editingClient) { dispatch({ type: 'UPDATE_CLIENT', payload }); } else { dispatch({ type: 'ADD_CLIENT', payload }); }
-        setIsFormOpen(false);
-        setEditingClient(null);
-    };
-    const handleDelete = () => {
-        if (editingClient && confirm(`「${editingClient.name}」を削除しますか？`)) {
-            dispatch({ type: 'DELETE_CLIENT', payload: editingClient.id });
-            setIsFormOpen(false);
-            setEditingClient(null);
+        if (editingProject) {
+            dispatch({ type: 'UPDATE_PROJECT', payload: { clientId: projectClientId, project } });
+        } else {
+            dispatch({ type: 'ADD_PROJECT', payload: { clientId: projectClientId, project } });
         }
+        setIsFormOpen(false);
+        setEditingProject(null);
     };
+
+    const handleToggleActive = (project: Project & { clientName: string }) => {
+        const updated: Project = { id: project.id, clientId: project.clientId, name: project.name, fixedFee: project.fixedFee, isActive: !project.isActive };
+        dispatch({ type: 'UPDATE_PROJECT', payload: { clientId: project.clientId, project: updated } });
+    };
+
+    const handleDelete = () => {
+        if (!editingProject) return;
+        if (!confirm('この案件を削除しますか？')) return;
+        dispatch({ type: 'DELETE_PROJECT', payload: { clientId: editingProject.clientId, projectId: editingProject.id } });
+        setIsFormOpen(false);
+        setEditingProject(null);
+    };
+
     return (
         <div className="space-y-6 animate-fade-in pb-20">
             <div className="flex justify-between items-center mb-2 px-1">
-                 <h2 className="text-lg font-black text-slate-800">クライアント管理</h2>
-                 <Button onClick={() => { setEditingClient(null); setIsFormOpen(true); }} className="!py-2 !px-4 !rounded-lg text-xs theme-bg contrast-text"><Plus size={16} /> 新規登録</Button>
-            </div>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                {state.clients.map(client => (
-                    <Card key={client.id} onClick={() => { setEditingClient(client); setIsFormOpen(true); }} className="!p-4 hover:!border-slate-300 transition-all border border-transparent cursor-pointer">
-                        <div className="flex justify-between items-start mb-3">
-                            <div className="flex items-center gap-2">
-                                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-sm" style={{ backgroundColor: client.color }}>{client.name.charAt(0)}</div>
-                                <div>
-                                    <h3 className="font-bold text-slate-800 text-sm">{client.name}</h3>
-                                    <div className="text-[9px] font-bold text-slate-400">締日: {client.closingDate === 99 ? '末日' : `${client.closingDate}日`}</div>
-                                </div>
-                            </div>
-                            <div className="p-1.5 bg-slate-50 rounded-full text-slate-300"><Edit2 size={14} /></div>
-                        </div>
-                        <div className="space-y-1.5">
-                             <div className="flex justify-between items-center p-1.5 bg-slate-50 rounded-lg">
-                                 <span className="text-[9px] font-bold text-slate-500">時給</span>
-                                 <span className="text-xs font-black text-slate-700">¥{client.defaultHourlyRate?.toLocaleString() || 0}</span>
-                             </div>
-                             <div className="flex justify-between items-center p-1.5 bg-slate-50 rounded-lg">
-                                 <span className="text-[9px] font-bold text-slate-500">固定</span>
-                                 <span className="text-xs font-black text-slate-700">¥{client.defaultFixedFee?.toLocaleString() || 0}</span>
-                             </div>
-                        </div>
-                    </Card>
-                ))}
-                <button onClick={() => { setEditingClient(null); setIsFormOpen(true); }} className="border-2 border-dashed border-slate-200 rounded-2xl p-4 flex flex-col items-center justify-center gap-2 text-slate-400 hover:bg-slate-50 hover:border-slate-300 transition-all min-h-[140px]">
-                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center"><Plus size={20} /></div>
-                    <span className="text-xs font-bold">追加</span>
-                </button>
+                <h2 className="text-lg font-black text-slate-800">案件管理</h2>
+                <Button onClick={() => { setEditingProject(null); setIsFormOpen(true); }} disabled={state.clients.length === 0} className="!py-2 !px-4 !rounded-lg text-xs theme-bg contrast-text"><Plus size={16} /> 新規登録</Button>
             </div>
 
-            {clientsWithFixedFee.length > 0 && (
+            {/* Filter bar */}
+            <div className="space-y-2 px-1">
+                {/* Client filter chips */}
+                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+                    <button onClick={() => setFilterClientId('all')} className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-bold border transition-all ${filterClientId === 'all' ? 'bg-slate-700 text-white border-transparent' : 'bg-white border-slate-200 text-slate-500'}`}>すべて</button>
+                    {state.clients.map(c => (
+                        <button key={c.id} onClick={() => setFilterClientId(c.id)} className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-bold border transition-all flex items-center gap-1.5 ${filterClientId === c.id ? 'bg-slate-700 text-white border-transparent' : 'bg-white border-slate-200 text-slate-500'}`}>
+                            <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: c.color }}></div>
+                            {c.name}
+                        </button>
+                    ))}
+                </div>
+                {/* Status filter + search */}
+                <div className="flex items-center gap-2">
+                    <div className="flex gap-1 bg-white rounded-lg border border-slate-200 p-0.5">
+                        {(['all', 'active', 'completed'] as const).map(s => (
+                            <button key={s} onClick={() => setFilterStatus(s)} className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${filterStatus === s ? 'bg-slate-700 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>
+                                {s === 'all' ? '全て' : s === 'active' ? 'アクティブ' : '完了'}
+                            </button>
+                        ))}
+                    </div>
+                    <input
+                        type="text"
+                        value={searchText}
+                        onChange={e => setSearchText(e.target.value)}
+                        placeholder="案件名で検索..."
+                        className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-slate-400 transition-colors"
+                    />
+                </div>
+            </div>
+
+            {state.clients.length === 0 ? (
+                <Card className="!p-8 text-center">
+                    <div className="text-slate-400 mb-2"><Users size={32} className="mx-auto mb-2 opacity-50" /></div>
+                    <p className="text-sm font-bold text-slate-500 mb-1">クライアントを先に登録してください</p>
+                    <p className="text-xs text-slate-400">案件はクライアントに紐づけて管理します</p>
+                    <Link to="/clients" className="inline-flex items-center gap-1 mt-4 text-xs font-bold theme-bg contrast-text px-4 py-2 rounded-lg">
+                        <Users size={14} /> クライアント管理へ
+                    </Link>
+                </Card>
+            ) : filteredProjects.length === 0 ? (
+                <Card className="!p-8 text-center">
+                    <div className="text-slate-400 mb-2"><Briefcase size={32} className="mx-auto mb-2 opacity-50" /></div>
+                    <p className="text-sm font-bold text-slate-500">案件がありません</p>
+                    <p className="text-xs text-slate-400 mt-1">「新規登録」ボタンから案件を追加しましょう</p>
+                </Card>
+            ) : (
+                <Card className="!p-0 overflow-hidden">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                            <thead>
+                                <tr className="border-b border-slate-100 bg-slate-50">
+                                    <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">案件名</th>
+                                    <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">クライアント</th>
+                                    <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">固定報酬</th>
+                                    <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">ステータス</th>
+                                    <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {filteredProjects.map(project => (
+                                    <tr key={project.id} className={`border-b border-slate-50 hover:bg-slate-50/50 transition-colors cursor-pointer ${!project.isActive ? 'opacity-50' : ''}`} onClick={() => { setEditingProject(project); setIsFormOpen(true); }}>
+                                        <td className="px-4 py-3">
+                                            <div className="text-sm font-bold text-slate-800">{project.name}</div>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: project.clientColor }}></div>
+                                                <span className="text-xs font-bold text-slate-600">{project.clientName}</span>
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-3 text-right">
+                                            <span className="text-xs font-black text-slate-700">¥{project.fixedFee.toLocaleString()}</span>
+                                        </td>
+                                        <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
+                                            <button
+                                                onClick={() => handleToggleActive(project)}
+                                                className={`w-10 h-5 rounded-full transition-colors relative ${project.isActive ? 'theme-bg' : 'bg-slate-200'}`}
+                                            >
+                                                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${project.isActive ? 'left-5' : 'left-0.5'}`}></div>
+                                            </button>
+                                        </td>
+                                        <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
+                                            <button onClick={() => { setEditingProject(project); setIsFormOpen(true); }} className="p-1.5 text-slate-400 hover:text-slate-600 transition-colors">
+                                                <Edit2 size={14} />
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </Card>
+            )}
+
+            {/* 月次報酬管理セクション */}
+            {activeProjectsForFee.length > 0 && (
                 <div className="mt-8">
                     <div className="flex justify-between items-center mb-4 px-1">
-                        <h3 className="text-lg font-black text-slate-800">月次固定報酬</h3>
+                        <h3 className="text-lg font-black text-slate-800">月次報酬管理</h3>
                         <select
                             value={selectedYearMonth}
                             onChange={e => setSelectedYearMonth(e.target.value)}
@@ -1682,21 +2253,24 @@ const ClientsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = (
                     </div>
                     <Card className="!p-3">
                         <div className="space-y-1">
-                            {clientsWithFixedFee.map(client => {
-                                const fee = getMonthlyFee(client.id, selectedYearMonth);
+                            {activeProjectsForFee.map(project => {
+                                const fee = getMonthlyFee(project.id, selectedYearMonth);
                                 const isEnabled = !!fee;
                                 return (
-                                    <div key={client.id} className="flex items-center justify-between py-2 px-2 bg-slate-50 rounded-lg">
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-6 h-6 rounded flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: client.color }}>
-                                                {client.name.charAt(0)}
+                                    <div key={project.id} className="flex items-center justify-between py-2 px-2 bg-slate-50 rounded-lg">
+                                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                                            <div className="w-6 h-6 rounded flex items-center justify-center text-white text-xs font-bold shrink-0" style={{ backgroundColor: project.clientColor }}>
+                                                {project.clientName.charAt(0)}
                                             </div>
-                                            <span className="text-xs font-bold text-slate-700">{client.name}</span>
-                                            <span className="text-[10px] text-slate-400">¥{client.defaultFixedFee?.toLocaleString()}</span>
+                                            <div className="flex-1 min-w-0">
+                                                <span className="text-xs font-bold text-slate-700 truncate block">{project.name}</span>
+                                                <span className="text-[10px] text-slate-400">{project.clientName}</span>
+                                            </div>
+                                            <span className="text-[10px] text-slate-400 shrink-0">¥{project.fixedFee.toLocaleString()}</span>
                                         </div>
                                         <button
-                                            onClick={() => toggleMonthlyFee(client)}
-                                            className={`w-10 h-5 rounded-full transition-colors relative ${isEnabled ? 'theme-bg' : 'bg-slate-200'}`}
+                                            onClick={() => toggleMonthlyFee(project)}
+                                            className={`w-10 h-5 rounded-full transition-colors relative ml-3 shrink-0 ${isEnabled ? 'theme-bg' : 'bg-slate-200'}`}
                                         >
                                             <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${isEnabled ? 'left-5' : 'left-0.5'}`}></div>
                                         </button>
@@ -1718,9 +2292,152 @@ const ClientsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = (
             )}
 
             {isFormOpen && (
-                 <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-300">
-                    <div className="bg-white w-full max-w-md rounded-t-[40px] p-8 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[90vh] overflow-y-auto">
-                        <div className="w-12 h-1 bg-slate-100 rounded-full mx-auto mb-6"></div>
+                <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-300">
+                    <div className="bg-white w-full max-w-lg rounded-2xl p-8 shadow-2xl animate-in zoom-in-95 duration-300 max-h-[85vh] overflow-y-auto mx-4">
+                        <div className="flex justify-between items-center mb-8">
+                            <h3 className="text-xl font-black text-slate-800">{editingProject ? '案件編集' : '新規案件'}</h3>
+                            {editingProject && (
+                                <button onClick={handleDelete} className="p-2 text-red-500 bg-red-50 rounded-full hover:bg-red-100 transition-colors"><Trash2 size={20} /></button>
+                            )}
+                        </div>
+                        <div className="space-y-6 mb-8">
+                            <div>
+                                <label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">クライアント</label>
+                                <Select value={projectClientId} onChange={e => setProjectClientId(e.target.value)} className="!rounded-xl border-slate-200 h-14">
+                                    {state.clients.map(c => (
+                                        <option key={c.id} value={c.id}>{c.name}</option>
+                                    ))}
+                                </Select>
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">案件名</label>
+                                <Input value={projectName} onChange={e => setProjectName(e.target.value)} placeholder="案件名を入力" className="!h-14 font-bold" />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">固定報酬 (¥)</label>
+                                <Input type="number" value={projectFixedFee} onChange={e => setProjectFixedFee(e.target.value)} placeholder="0" className="!h-12 font-bold" />
+                            </div>
+                        </div>
+                        <div className="flex gap-3">
+                            <Button onClick={() => { setIsFormOpen(false); setEditingProject(null); }} variant="secondary" className="flex-1 h-14 rounded-2xl">キャンセル</Button>
+                            <Button onClick={handleSubmit} disabled={!projectName || !projectClientId} className="flex-[2] theme-bg contrast-text border-none font-black h-14 rounded-2xl">保存する</Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+const ClientsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({ state, dispatch }) => {
+    const [isFormOpen, setIsFormOpen] = useState(false);
+    const [editingClient, setEditingClient] = useState<Client | null>(null);
+    const [name, setName] = useState('');
+    const [color, setColor] = useState(STYLISH_COLORS[0]);
+    const [hourlyRate, setHourlyRate] = useState('');
+    const [closingDate, setClosingDate] = useState('99');
+
+    // Category management state
+    const [newCategoryName, setNewCategoryName] = useState('');
+
+    useEffect(() => {
+        if (editingClient) {
+            setName(editingClient.name);
+            setColor(editingClient.color);
+            setHourlyRate(editingClient.defaultHourlyRate?.toString() || '');
+            setClosingDate(editingClient.closingDate?.toString() || '99');
+        } else {
+            setName('');
+            setColor(getNextStylishColor(state.clients.map(c => c.color)));
+            setHourlyRate('');
+            setClosingDate('99');
+        }
+    }, [editingClient, isFormOpen, state.clients]);
+    const handleSubmit = () => {
+        if (!name) return;
+        const payload = {
+            id: editingClient ? editingClient.id : `c_${Date.now()}`,
+            name,
+            color,
+            defaultHourlyRate: Number(hourlyRate),
+            closingDate: Number(closingDate),
+            taskPresets: editingClient ? editingClient.taskPresets : [],
+            projects: editingClient ? editingClient.projects : [],
+            categories: editingClient ? editingClient.categories : []
+        };
+        if (editingClient) { dispatch({ type: 'UPDATE_CLIENT', payload }); } else { dispatch({ type: 'ADD_CLIENT', payload }); }
+        setIsFormOpen(false);
+        setEditingClient(null);
+    };
+
+    const handleAddCategory = () => {
+        if (!newCategoryName.trim() || !editingClient) return;
+        const trimmed = newCategoryName.trim();
+        if (editingClient.categories.includes(trimmed)) return;
+        setEditingClient({
+            ...editingClient,
+            categories: [...editingClient.categories, trimmed]
+        });
+        setNewCategoryName('');
+    };
+
+    const handleRemoveCategory = (cat: string) => {
+        if (!editingClient) return;
+        setEditingClient({
+            ...editingClient,
+            categories: editingClient.categories.filter(c => c !== cat)
+        });
+    };
+    const handleDelete = () => {
+        if (editingClient && confirm(`「${editingClient.name}」を削除しますか？`)) {
+            dispatch({ type: 'DELETE_CLIENT', payload: editingClient.id });
+            setIsFormOpen(false);
+            setEditingClient(null);
+        }
+    };
+    return (
+        <div className="space-y-6 animate-fade-in pb-20">
+            <div className="flex justify-between items-center mb-2 px-1">
+                 <h2 className="text-lg font-black text-slate-800">クライアント管理</h2>
+                 <Button onClick={() => { setEditingClient(null); setIsFormOpen(true); }} className="!py-2 !px-4 !rounded-lg text-xs theme-bg contrast-text"><Plus size={16} /> 新規登録</Button>
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                {state.clients.map(client => (
+                    <Card key={client.id} onClick={() => { setEditingClient(client); setIsFormOpen(true); }} className="!p-4 hover:!border-slate-300 transition-all border border-transparent cursor-pointer">
+                        <div className="flex justify-between items-start mb-3">
+                            <div className="flex items-center gap-2">
+                                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-sm relative" style={{ backgroundColor: client.color }}>
+                                    {client.name.charAt(0)}
+                                    {client.projects && client.projects.filter(p => p.isActive).length > 0 && (
+                                        <div className="absolute -top-1 -right-1 bg-slate-800 text-white text-[8px] font-black rounded-full w-4 h-4 flex items-center justify-center">
+                                            {client.projects.filter(p => p.isActive).length}
+                                        </div>
+                                    )}
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-slate-800 text-sm">{client.name}</h3>
+                                    <div className="text-[9px] font-bold text-slate-400">締日: {client.closingDate === 99 ? '末日' : `${client.closingDate}日`}</div>
+                                </div>
+                            </div>
+                            <div className="p-1.5 bg-slate-50 rounded-full text-slate-300"><Edit2 size={14} /></div>
+                        </div>
+                        <div className="space-y-1.5">
+                             <div className="flex justify-between items-center p-1.5 bg-slate-50 rounded-lg">
+                                 <span className="text-[9px] font-bold text-slate-500">時給</span>
+                                 <span className="text-xs font-black text-slate-700">¥{client.defaultHourlyRate?.toLocaleString() || 0}</span>
+                             </div>
+                        </div>
+                    </Card>
+                ))}
+                <button onClick={() => { setEditingClient(null); setIsFormOpen(true); }} className="border-2 border-dashed border-slate-200 rounded-2xl p-4 flex flex-col items-center justify-center gap-2 text-slate-400 hover:bg-slate-50 hover:border-slate-300 transition-all min-h-[140px]">
+                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center"><Plus size={20} /></div>
+                    <span className="text-xs font-bold">追加</span>
+                </button>
+            </div>
+
+            {isFormOpen && (
+                 <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-300">
+                    <div className="bg-white w-full max-w-lg rounded-2xl p-8 shadow-2xl animate-in zoom-in-95 duration-300 max-h-[85vh] overflow-y-auto mx-4">
                         <div className="flex justify-between items-center mb-8"><h3 className="text-xl font-black text-slate-800">{editingClient ? 'クライアント編集' : '新規クライアント'}</h3>{editingClient && (<button onClick={handleDelete} className="p-2 text-red-500 bg-red-50 rounded-full hover:bg-red-100 transition-colors"><Trash2 size={20} /></button>)}</div>
                         <div className="space-y-6 mb-8">
                             <div><label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">クライアント名</label><Input value={name} onChange={e => setName(e.target.value)} placeholder="会社名や個人名" className="!h-14 font-bold" /></div>
@@ -1742,9 +2459,9 @@ const ClientsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = (
                                     </div>
                                 </div>
                             </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div><label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">基本時給 (¥)</label><Input type="number" value={hourlyRate} onChange={e => setHourlyRate(e.target.value)} placeholder="0" className="!h-12 font-bold" /></div>
-                                <div><label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">固定報酬 (¥)</label><Input type="number" value={fixedFee} onChange={e => setFixedFee(e.target.value)} placeholder="0" className="!h-12 font-bold" /></div>
+                            <div>
+                                <label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">基本時給 (¥)</label>
+                                <Input type="number" value={hourlyRate} onChange={e => setHourlyRate(e.target.value)} placeholder="0" className="!h-12 font-bold" />
                             </div>
                             <div>
                                 <label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">締日設定</label>
@@ -1773,6 +2490,100 @@ const ClientsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = (
                                 </div>
                             </div>
                         </div>
+                        {/* Category Management Section */}
+                        {editingClient && (
+                            <div className="mb-8 border-t border-slate-100 pt-6">
+                                <label className="text-[10px] font-black text-slate-400 block mb-4 uppercase tracking-widest flex items-center gap-2">
+                                    <LayoutList size={12} /> カテゴリ管理
+                                </label>
+                                <div className="flex flex-wrap gap-2 mb-4">
+                                    {editingClient.categories.map(cat => (
+                                        <span key={cat} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 rounded-lg text-xs font-bold text-slate-700">
+                                            {cat}
+                                            <button onClick={() => handleRemoveCategory(cat)} className="text-slate-400 hover:text-red-500 transition-colors"><X size={12} /></button>
+                                        </span>
+                                    ))}
+                                    {editingClient.categories.length === 0 && (
+                                        <div className="text-xs text-slate-400 font-bold py-2">カテゴリがありません</div>
+                                    )}
+                                </div>
+                                <div className="flex gap-2">
+                                    <Input
+                                        value={newCategoryName}
+                                        onChange={e => setNewCategoryName(e.target.value)}
+                                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddCategory(); } }}
+                                        placeholder="新しいカテゴリ名"
+                                        className="!h-10 text-sm flex-1"
+                                    />
+                                    <button onClick={handleAddCategory} disabled={!newCategoryName.trim()} className="px-4 py-2 rounded-lg bg-slate-800 text-white text-xs font-bold disabled:opacity-40 flex items-center gap-1 shrink-0">
+                                        <Plus size={14} /> 追加
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Link to Projects Page */}
+                        {editingClient && (
+                            <div className="mb-8 border-t border-slate-100 pt-4">
+                                <Link to="/projects" onClick={() => setIsFormOpen(false)} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
+                                    <div className="flex items-center gap-2 text-sm font-bold text-slate-600">
+                                        <Briefcase size={14} />
+                                        <span>案件管理</span>
+                                        {editingClient.projects && editingClient.projects.length > 0 && (
+                                            <Badge className="!text-[9px]">{editingClient.projects.filter(p => p.isActive).length}件</Badge>
+                                        )}
+                                    </div>
+                                    <ArrowRight size={14} className="text-slate-400" />
+                                </Link>
+                            </div>
+                        )}
+
+                        {/* Saved Reports Section */}
+                        {editingClient && (() => {
+                            const clientReports = state.savedReports.filter(r => r.clientId === editingClient.id);
+                            if (clientReports.length === 0) return null;
+                            return (
+                                <div className="mb-8 border-t border-slate-100 pt-4">
+                                    <h4 className="text-[10px] font-black text-slate-400 ml-1 mb-3 uppercase tracking-widest">保存済み報告書</h4>
+                                    <div className="space-y-2">
+                                        {clientReports.map(report => (
+                                            <div key={report.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="text-sm font-bold text-slate-700 truncate">{report.title}</div>
+                                                    <div className="text-xs text-slate-400">{report.periodStart} 〜 {report.periodEnd} ・ {new Date(report.createdAt).toLocaleDateString('ja-JP')}</div>
+                                                </div>
+                                                <div className="flex items-center gap-1 ml-2 shrink-0">
+                                                    <button
+                                                        onClick={() => {
+                                                            const w = window.open('', '_blank');
+                                                            if (!w) return;
+                                                            w.document.write(report.htmlContent.replace('</body>', '<script>setTimeout(() => { window.print(); }, 500);<\/script></body>'));
+                                                            w.document.close();
+                                                        }}
+                                                        className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                                        title="再ダウンロード"
+                                                    >
+                                                        <Download size={16} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => {
+                                                            if (confirm('この報告書を削除しますか？')) {
+                                                                dispatch({ type: 'DELETE_SAVED_REPORT', payload: report.id });
+                                                            }
+                                                        }}
+                                                        className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                                        title="削除"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            );
+                        })()}
+
                         <div className="flex gap-3"><Button onClick={() => setIsFormOpen(false)} variant="secondary" className="flex-1 h-14 rounded-2xl">キャンセル</Button><Button onClick={handleSubmit} className="flex-[2] theme-bg contrast-text border-none font-black h-14 rounded-2xl">保存する</Button></div>
                     </div>
                 </div>
@@ -1809,7 +2620,8 @@ const AppLayout: React.FC = () => {
                 clients: cloudData.clients,
                 entries: cloudData.entries,
                 settings: cloudData.settings,
-                monthlyFixedFees: cloudData.monthlyFixedFees
+                monthlyFixedFees: cloudData.monthlyFixedFees,
+                savedReports: cloudData.savedReports || []
               }));
             }
           }
@@ -2042,12 +2854,25 @@ const AppLayout: React.FC = () => {
         case 'UPDATE_GOALS':
           await saveUserSettings(user.id, newState.settings);
           break;
+        case 'ADD_PROJECT':
+        case 'UPDATE_PROJECT':
+          if (payload?.project) await saveProject(user.id, payload.project);
+          break;
+        case 'DELETE_PROJECT':
+          if (payload?.projectId) await deleteProjectFromSupabase(payload.projectId);
+          break;
         case 'ADD_MONTHLY_FIXED_FEE':
         case 'UPDATE_MONTHLY_FIXED_FEE':
           await saveMonthlyFixedFee(user.id, payload);
           break;
         case 'DELETE_MONTHLY_FIXED_FEE':
           await deleteFeeFromSupabase(payload);
+          break;
+        case 'ADD_SAVED_REPORT':
+          await saveSavedReport(user.id, payload);
+          break;
+        case 'DELETE_SAVED_REPORT':
+          await deleteSavedReportFromSupabase(payload);
           break;
       }
     } catch (error) {
@@ -2068,7 +2893,9 @@ const AppLayout: React.FC = () => {
                     startTime: Date.now(),
                     endTime: null,
                     description: action.payload.description || '',
-                    rateType: action.payload.rateType
+                    rateType: action.payload.rateType,
+                    projectId: action.payload.projectId,
+                    category: action.payload.category
                 };
                 newState.entries = [...prev.entries, newEntry];
                 newState.activeEntryId = newEntry.id;
@@ -2117,6 +2944,32 @@ const AppLayout: React.FC = () => {
             case 'UPDATE_THEME': newState.settings = { ...prev.settings, themeColor: action.payload }; break;
             case 'UPDATE_GOALS': newState.settings = { ...prev.settings, ...action.payload }; break;
             case 'CLEAR_CLIENT_PRESETS': newState.clients = prev.clients.map(c => c.id === action.payload ? { ...c, taskPresets: [] } : c); break;
+            case 'ADD_PROJECT':
+                newState.clients = prev.clients.map(c => {
+                    if (c.id === action.payload.clientId) {
+                        return { ...c, projects: [...(c.projects || []), action.payload.project] };
+                    }
+                    return c;
+                });
+                break;
+            case 'UPDATE_PROJECT':
+                newState.clients = prev.clients.map(c => {
+                    if (c.id === action.payload.clientId) {
+                        return { ...c, projects: (c.projects || []).map(p => p.id === action.payload.project.id ? action.payload.project : p) };
+                    }
+                    return c;
+                });
+                break;
+            case 'DELETE_PROJECT':
+                newState.clients = prev.clients.map(c => {
+                    if (c.id === action.payload.clientId) {
+                        return { ...c, projects: (c.projects || []).filter(p => p.id !== action.payload.projectId) };
+                    }
+                    return c;
+                });
+                // Clear projectId from entries that reference this project
+                newState.entries = prev.entries.map(e => e.projectId === action.payload.projectId ? { ...e, projectId: undefined } : e);
+                break;
             case 'ADD_MONTHLY_FIXED_FEE':
                 newState.monthlyFixedFees = [...prev.monthlyFixedFees, action.payload];
                 break;
@@ -2125,6 +2978,12 @@ const AppLayout: React.FC = () => {
                 break;
             case 'DELETE_MONTHLY_FIXED_FEE':
                 newState.monthlyFixedFees = prev.monthlyFixedFees.filter(f => f.id !== action.payload);
+                break;
+            case 'ADD_SAVED_REPORT':
+                newState.savedReports = [...prev.savedReports, action.payload];
+                break;
+            case 'DELETE_SAVED_REPORT':
+                newState.savedReports = prev.savedReports.filter(r => r.id !== action.payload);
                 break;
         }
         saveState(newState);
@@ -2150,7 +3009,6 @@ const AppLayout: React.FC = () => {
     { name: 'Moonlit Asteroid', value: 'linear-gradient(to right, #0F2027, #203A43, #2C5364)' },
   ];
 
-  // Show loading screen while checking auth
   if (authLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
@@ -2161,8 +3019,6 @@ const AppLayout: React.FC = () => {
       </div>
     );
   }
-
-  // Show login page if not authenticated
   if (!user) {
     return <LoginPage onSignIn={signIn} loading={authLoading} error={authError} />;
   }
@@ -2177,14 +3033,11 @@ const AppLayout: React.FC = () => {
               <DesktopNavItem to="/logs" icon={<History />} label="稼働履歴" active={location.pathname === '/logs'} />
               <DesktopNavItem to="/reports" icon={<FileText />} label="報告書" active={location.pathname === '/reports'} />
               <DesktopNavItem to="/clients" icon={<Users />} label="クライアント管理" active={location.pathname === '/clients'} />
+              <DesktopNavItem to="/projects" icon={<Briefcase />} label="案件管理" active={location.pathname === '/projects'} />
               <DesktopNavItem to="/analytics" icon={<BarChart2 />} label="データ分析" active={location.pathname === '/analytics'} />
               <DesktopNavItem to="/usage" icon={<HelpCircle />} label="使い方" active={location.pathname === '/usage'} />
            </nav>
            <div className="p-4 border-t border-slate-100">
-             <div className="flex items-center gap-2 px-4 py-2 mb-2">
-               {isSyncing ? <CloudOff size={16} className="text-orange-500 animate-pulse" /> : <Cloud size={16} className="text-green-500" />}
-               <span className="text-xs text-slate-400 font-medium">{isSyncing ? '同期中...' : 'クラウド同期済'}</span>
-             </div>
              <button onClick={() => setIsSettingsOpen(true)} className="flex items-center gap-3 w-full px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl transition-colors font-bold"><Settings size={20} /><span>設定</span></button>
            </div>
         </aside>
@@ -2199,8 +3052,9 @@ const AppLayout: React.FC = () => {
             <div className="hidden md:block h-8"></div>
             <main className="p-4 md:p-8 max-w-6xl w-full mx-auto pb-24 md:pb-8">
                 <Routes>
-                    <Route path="/" element={<Dashboard state={state} onStartTimer={(clientId, description, rateType) => dispatch({type:'START_TIMER', payload:{clientId, description, rateType}})} onStopTimer={() => dispatch({type:'STOP_TIMER'})} onUpdateDescription={(id, description) => { const entry = state.entries.find(e => e.id === id); if (entry) dispatch({type:'UPDATE_ENTRY', payload:{...entry, description}}); }} onDeletePreset={(clientId, presetName) => dispatch({type: 'DELETE_CLIENT_PRESET', payload: {clientId, presetName}})} />} />
+                    <Route path="/" element={<Dashboard state={state} onStartTimer={(clientId, description, rateType, projectId, category) => dispatch({type:'START_TIMER', payload:{clientId, description, rateType, projectId, category}})} onStopTimer={() => dispatch({type:'STOP_TIMER'})} onUpdateDescription={(id, description) => { const entry = state.entries.find(e => e.id === id); if (entry) dispatch({type:'UPDATE_ENTRY', payload:{...entry, description}}); }} onDeletePreset={(clientId, presetName) => dispatch({type: 'DELETE_CLIENT_PRESET', payload: {clientId, presetName}})} />} />
                     <Route path="/clients" element={<ClientsPage state={state} dispatch={dispatch} />} />
+                    <Route path="/projects" element={<ProjectsPage state={state} dispatch={dispatch} />} />
                     <Route path="/logs" element={<LogsPage state={state} dispatch={dispatch} />} />
                     <Route path="/reports" element={<ReportPage state={state} dispatch={dispatch} />} />
                     <Route path="/analytics" element={<AnalyticsPage state={state} />} />
@@ -2218,11 +3072,10 @@ const AppLayout: React.FC = () => {
         </div>
         {state.activeEntryId && (<DraggableTimer activeClientName={activeClientName} onStop={() => dispatch({type:'STOP_TIMER'})} elapsedTime={formatTimeShort(floatingElapsed)} onTogglePiP={handleTogglePiP} isPiPActive={isPiPActive} />)}
         {isSettingsOpen && (
-          <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-300">
-             <div className="bg-white w-full max-w-md rounded-t-[45px] p-8 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[90vh] overflow-y-auto">
-                <div className="w-12 h-1.5 bg-slate-100 rounded-full mx-auto mb-6"></div>
+          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-300">
+             <div className="bg-white w-full max-w-lg rounded-2xl p-8 shadow-2xl animate-in zoom-in-95 duration-300 max-h-[85vh] overflow-y-auto mx-4">
                 <div className="flex justify-between items-center mb-8"><h3 className="text-2xl font-black text-slate-800 tracking-tight">設定</h3><button onClick={() => setIsSettingsOpen(false)} className="p-2 bg-slate-50 rounded-full text-slate-400 active:scale-90 transition-all"><X size={24} fill="none" strokeWidth={2.5} /></button></div>
-                <div className="mb-4"><label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">ユーザー設定</label><div className="p-4 bg-slate-50 rounded-2xl border border-slate-100"><label className="text-[8px] font-bold text-slate-400 mb-1 block">表示名 (報告書の発行者名)</label><Input value={state.settings.userName} onChange={e => dispatch({ type: 'UPDATE_GOALS', payload: { userName: e.target.value } })} className="!bg-white !p-2 !border-none !text-sm font-bold" /></div></div>
+                <div className="mb-4"><label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">ユーザー設定</label><div className="p-4 bg-slate-50 rounded-2xl border border-slate-100"><label className="text-[8px] font-bold text-slate-400 mb-1 block">表示名 (報告書の発行者名)</label><Input value={state.settings.userName === 'Freelancer' ? (user?.user_metadata?.full_name || user?.user_metadata?.name || state.settings.userName) : state.settings.userName} onChange={e => dispatch({ type: 'UPDATE_GOALS', payload: { userName: e.target.value } })} className="!bg-white !p-2 !border-none !text-sm font-bold" /></div></div>
                 <div className="mb-8"><label className="text-[10px] font-black text-slate-400 block mb-4 uppercase tracking-widest">目標設定</label><div className="grid grid-cols-2 gap-4"><div className="p-4 bg-slate-50 rounded-2xl border border-slate-100"><label className="text-[8px] font-bold text-slate-400 mb-1 block">月間売上目標</label><Input type="number" value={state.settings.monthlyGoalRevenue} onChange={e => dispatch({ type: 'UPDATE_GOALS', payload: { monthlyGoalRevenue: Number(e.target.value) } })} className="!bg-white !p-0 !border-none !text-lg !font-black" /></div><div className="p-4 bg-slate-50 rounded-2xl border border-slate-100"><label className="text-[8px] font-bold text-slate-400 mb-1 block">月間稼働目標(h)</label><Input type="number" value={state.settings.monthlyGoalHours} onChange={e => dispatch({ type: 'UPDATE_GOALS', payload: { monthlyGoalHours: Number(e.target.value) } })} className="!bg-white !p-0 !border-none !text-lg !font-black" /></div></div></div>
                 <div className="mb-8"><label className="text-[10px] font-black text-slate-400 block mb-4 uppercase tracking-widest">通知設定</label><div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-slate-400 shadow-sm"><BellRing size={20}/></div><div><div className="text-xs font-black text-slate-800">ブラウザ通知</div><div className="text-[9px] text-slate-400 font-bold">長時間稼働時にアラートを表示</div></div></div><button onClick={() => { if (!state.settings.enableNotifications) { Notification.requestPermission(); } dispatch({ type: 'UPDATE_GOALS', payload: { enableNotifications: !state.settings.enableNotifications } }) }} className={`w-12 h-7 rounded-full transition-colors relative ${state.settings.enableNotifications ? 'theme-bg' : 'bg-slate-200'}`}><div className={`absolute top-1 w-5 h-5 rounded-full bg-white transition-all shadow-sm ${state.settings.enableNotifications ? 'left-6' : 'left-1'}`}></div></button></div></div>
                 <div className="mb-8"><label className="text-[10px] font-black text-slate-400 block mb-4 uppercase tracking-widest">テーマ & スタイル</label><div className="flex flex-wrap gap-4">{themeColors.map(color => (<button key={color.value} onClick={() => dispatch({ type: 'UPDATE_THEME', payload: color.value })} className={`w-12 h-12 rounded-2xl border-[3px] transition-all relative group overflow-hidden ${state.settings.themeColor === color.value ? 'border-slate-800 scale-110 shadow-lg' : 'border-transparent opacity-80'}`} style={{ background: color.value }}>{state.settings.themeColor === color.value && <div className="absolute inset-0 flex items-center justify-center text-slate-800 mix-blend-overlay"><Check size={20} strokeWidth={4} /></div>}</button>))}</div></div>
@@ -2232,8 +3085,10 @@ const AppLayout: React.FC = () => {
                      </button>
                 </div>
 
+                <Button onClick={() => setIsSettingsOpen(false)} className="w-full theme-bg contrast-text border-none font-black h-16 rounded-[24px] text-lg mb-8">設定を完了</Button>
+
                 {/* Account Section */}
-                <div className="mb-8">
+                <div className="mb-4">
                   <label className="text-[10px] font-black text-slate-400 block mb-4 uppercase tracking-widest">アカウント</label>
                   <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
                     <div className="flex items-center gap-3 mb-4">
@@ -2266,8 +3121,6 @@ const AppLayout: React.FC = () => {
                     </button>
                   </div>
                 </div>
-
-                <Button onClick={() => setIsSettingsOpen(false)} className="w-full theme-bg contrast-text border-none font-black h-16 rounded-[24px] text-lg">設定を完了</Button>
              </div>
           </div>
         )}

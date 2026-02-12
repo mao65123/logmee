@@ -1,5 +1,5 @@
 import { createClient, Session, User } from '@supabase/supabase-js';
-import { Client, TimeEntry, UserSettings, MonthlyFixedFee, Currency } from '../types';
+import { Client, TimeEntry, UserSettings, MonthlyFixedFee, Project, Currency, SavedReport } from '../types';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://iefnonbwfronqhbqxnib.supabase.co';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllZm5vbmJ3ZnJvbnFoYnF4bmliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAxODg4NDYsImV4cCI6MjA4NTc2NDg0Nn0.q-mTqJkMmni_baUWYTvASybmylgLpfLnrFWYjC1xwuo';
@@ -38,9 +38,20 @@ export interface DbClient {
   name: string;
   color: string;
   default_hourly_rate: number | null;
-  default_fixed_fee: number | null;
   closing_date: number | null;
   task_presets: string[];
+  categories: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbProject {
+  id: string;
+  user_id: string;
+  client_id: string;
+  name: string;
+  fixed_fee: number;
+  is_active: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -53,6 +64,8 @@ export interface DbTimeEntry {
   end_time: number | null;
   description: string;
   rate_type: 'hourly' | 'fixed';
+  project_id: string | null;
+  category: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -60,7 +73,7 @@ export interface DbTimeEntry {
 export interface DbMonthlyFixedFee {
   id: string;
   user_id: string;
-  client_id: string;
+  project_id: string;
   year_month: string;
   amount: number;
   note: string | null;
@@ -68,19 +81,33 @@ export interface DbMonthlyFixedFee {
   updated_at: string;
 }
 
+export interface DbSavedReport {
+  id: string;
+  user_id: string;
+  client_id: string;
+  title: string;
+  period_start: string;
+  period_end: string;
+  created_at: number;
+  html_content: string;
+  db_created_at: string;
+  db_updated_at: string;
+}
+
 // ============================================
 // Type Converters
 // ============================================
 
-function dbClientToClient(dbClient: DbClient): Client {
+function dbClientToClient(dbClient: DbClient, projects: Project[] = []): Client {
   return {
     id: dbClient.id,
     name: dbClient.name,
     color: dbClient.color,
     defaultHourlyRate: dbClient.default_hourly_rate ?? undefined,
-    defaultFixedFee: dbClient.default_fixed_fee ?? undefined,
     closingDate: dbClient.closing_date ?? undefined,
-    taskPresets: dbClient.task_presets || []
+    taskPresets: dbClient.task_presets || [],
+    projects,
+    categories: dbClient.categories || []
   };
 }
 
@@ -91,9 +118,30 @@ function clientToDbClient(client: Client, userId: string): Omit<DbClient, 'creat
     name: client.name,
     color: client.color,
     default_hourly_rate: client.defaultHourlyRate ?? null,
-    default_fixed_fee: client.defaultFixedFee ?? null,
     closing_date: client.closingDate ?? null,
-    task_presets: client.taskPresets || []
+    task_presets: client.taskPresets || [],
+    categories: client.categories || []
+  };
+}
+
+function dbProjectToProject(dbProject: DbProject): Project {
+  return {
+    id: dbProject.id,
+    clientId: dbProject.client_id,
+    name: dbProject.name,
+    fixedFee: dbProject.fixed_fee ?? 0,
+    isActive: dbProject.is_active
+  };
+}
+
+function projectToDbProject(project: Project, userId: string): Omit<DbProject, 'created_at' | 'updated_at'> {
+  return {
+    id: project.id,
+    user_id: userId,
+    client_id: project.clientId,
+    name: project.name,
+    fixed_fee: project.fixedFee,
+    is_active: project.isActive
   };
 }
 
@@ -104,7 +152,9 @@ function dbEntryToEntry(dbEntry: DbTimeEntry): TimeEntry {
     startTime: dbEntry.start_time,
     endTime: dbEntry.end_time,
     description: dbEntry.description,
-    rateType: dbEntry.rate_type
+    rateType: dbEntry.rate_type,
+    projectId: dbEntry.project_id ?? undefined,
+    category: dbEntry.category ?? undefined
   };
 }
 
@@ -116,7 +166,9 @@ function entryToDbEntry(entry: TimeEntry, userId: string): Omit<DbTimeEntry, 'cr
     start_time: entry.startTime,
     end_time: entry.endTime,
     description: entry.description,
-    rate_type: entry.rateType || 'hourly'
+    rate_type: entry.rateType || 'hourly',
+    project_id: entry.projectId ?? null,
+    category: entry.category ?? null
   };
 }
 
@@ -146,7 +198,7 @@ function settingsToDbSettings(settings: UserSettings, userId: string): Partial<D
 function dbFeeToFee(dbFee: DbMonthlyFixedFee): MonthlyFixedFee {
   return {
     id: dbFee.id,
-    clientId: dbFee.client_id,
+    projectId: dbFee.project_id,
     yearMonth: dbFee.year_month,
     amount: dbFee.amount,
     note: dbFee.note ?? undefined
@@ -157,10 +209,35 @@ function feeToDbFee(fee: MonthlyFixedFee, userId: string): Omit<DbMonthlyFixedFe
   return {
     id: fee.id,
     user_id: userId,
-    client_id: fee.clientId,
+    project_id: fee.projectId,
     year_month: fee.yearMonth,
     amount: fee.amount,
     note: fee.note ?? null
+  };
+}
+
+function dbSavedReportToSavedReport(dbReport: DbSavedReport): SavedReport {
+  return {
+    id: dbReport.id,
+    clientId: dbReport.client_id,
+    title: dbReport.title,
+    periodStart: dbReport.period_start,
+    periodEnd: dbReport.period_end,
+    createdAt: dbReport.created_at,
+    htmlContent: dbReport.html_content
+  };
+}
+
+function savedReportToDbSavedReport(report: SavedReport, userId: string): Omit<DbSavedReport, 'db_created_at' | 'db_updated_at'> {
+  return {
+    id: report.id,
+    user_id: userId,
+    client_id: report.clientId,
+    title: report.title,
+    period_start: report.periodStart,
+    period_end: report.periodEnd,
+    created_at: report.createdAt,
+    html_content: report.htmlContent
   };
 }
 
@@ -169,14 +246,11 @@ function feeToDbFee(fee: MonthlyFixedFee, userId: string): Omit<DbMonthlyFixedFe
 // ============================================
 
 export const signInWithGoogle = async () => {
+  const redirectUrl = window.location.origin + window.location.pathname;
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: window.location.origin,
-      queryParams: {
-        access_type: 'offline',
-        prompt: 'consent'
-      }
+      redirectTo: redirectUrl
     }
   });
 
@@ -294,7 +368,7 @@ export const getClients = async (userId: string): Promise<Client[]> => {
     return [];
   }
 
-  return (data || []).map(dbClientToClient);
+  return (data || []).map(d => dbClientToClient(d));
 };
 
 export const saveClient = async (userId: string, client: Client): Promise<boolean> => {
@@ -320,6 +394,54 @@ export const deleteClient = async (clientId: string): Promise<boolean> => {
 
   if (error) {
     console.error('Error deleting client:', error);
+    return false;
+  }
+
+  return true;
+};
+
+// ============================================
+// Project Functions
+// ============================================
+
+export const getProjects = async (userId: string): Promise<Project[]> => {
+  const { data, error } = await supabase
+    .from('projects')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching projects:', error);
+    return [];
+  }
+
+  return (data || []).map(dbProjectToProject);
+};
+
+export const saveProject = async (userId: string, project: Project): Promise<boolean> => {
+  const { error } = await supabase
+    .from('projects')
+    .upsert(projectToDbProject(project, userId), {
+      onConflict: 'id'
+    });
+
+  if (error) {
+    console.error('Error saving project:', error);
+    return false;
+  }
+
+  return true;
+};
+
+export const deleteProject = async (projectId: string): Promise<boolean> => {
+  const { error } = await supabase
+    .from('projects')
+    .delete()
+    .eq('id', projectId);
+
+  if (error) {
+    console.error('Error deleting project:', error);
     return false;
   }
 
@@ -423,6 +545,54 @@ export const deleteMonthlyFixedFee = async (feeId: string): Promise<boolean> => 
 };
 
 // ============================================
+// Saved Report Functions
+// ============================================
+
+export const getSavedReports = async (userId: string): Promise<SavedReport[]> => {
+  const { data, error } = await supabase
+    .from('saved_reports')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching saved reports:', error);
+    return [];
+  }
+
+  return (data || []).map(dbSavedReportToSavedReport);
+};
+
+export const saveSavedReport = async (userId: string, report: SavedReport): Promise<boolean> => {
+  const { error } = await supabase
+    .from('saved_reports')
+    .upsert(savedReportToDbSavedReport(report, userId), {
+      onConflict: 'id'
+    });
+
+  if (error) {
+    console.error('Error saving report:', error);
+    return false;
+  }
+
+  return true;
+};
+
+export const deleteSavedReport = async (reportId: string): Promise<boolean> => {
+  const { error } = await supabase
+    .from('saved_reports')
+    .delete()
+    .eq('id', reportId);
+
+  if (error) {
+    console.error('Error deleting saved report:', error);
+    return false;
+  }
+
+  return true;
+};
+
+// ============================================
 // Bulk Data Operations (for initial sync)
 // ============================================
 
@@ -431,16 +601,25 @@ export interface AppData {
   entries: TimeEntry[];
   settings: UserSettings;
   monthlyFixedFees: MonthlyFixedFee[];
+  savedReports: SavedReport[];
 }
 
 export const loadAllUserData = async (userId: string): Promise<AppData | null> => {
   try {
-    const [clients, entries, settings, monthlyFixedFees] = await Promise.all([
+    const [clients, projects, entries, settings, monthlyFixedFees, savedReports] = await Promise.all([
       getClients(userId),
+      getProjects(userId),
       getTimeEntries(userId),
       getUserSettings(userId),
-      getMonthlyFixedFees(userId)
+      getMonthlyFixedFees(userId),
+      getSavedReports(userId)
     ]);
+
+    // Merge projects into their respective clients
+    const clientsWithProjects = clients.map(client => ({
+      ...client,
+      projects: projects.filter(p => p.clientId === client.id)
+    }));
 
     // Default settings if none exist
     const defaultSettings: UserSettings = {
@@ -453,10 +632,11 @@ export const loadAllUserData = async (userId: string): Promise<AppData | null> =
     };
 
     return {
-      clients,
+      clients: clientsWithProjects,
       entries,
       settings: settings || defaultSettings,
-      monthlyFixedFees
+      monthlyFixedFees,
+      savedReports
     };
   } catch (error) {
     console.error('Error loading all user data:', error);
@@ -478,6 +658,10 @@ export const syncSettingsToSupabase = async (userId: string, settings: UserSetti
 
 export const syncMonthlyFeeToSupabase = async (userId: string, fee: MonthlyFixedFee): Promise<boolean> => {
   return saveMonthlyFixedFee(userId, fee);
+};
+
+export const syncProjectToSupabase = async (userId: string, project: Project): Promise<boolean> => {
+  return saveProject(userId, project);
 };
 
 // ============================================
