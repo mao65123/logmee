@@ -7,6 +7,9 @@ import {
 } from 'lucide-react';
 import { ResponsiveContainer, Cell, BarChart, Bar, XAxis, Tooltip as RechartsTooltip, PieChart, Pie, Legend } from 'recharts';
 
+import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, useSortable, horizontalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { AppState, Client, TimeEntry, MonthlyFixedFee, Project, Currency, SavedReport } from './types';
 import { loadState, saveState } from './services/storage';
 import { exportToCSV } from './services/pdfGenerator';
@@ -93,8 +96,6 @@ const DraggableTimer: React.FC<{
     const offset = useRef({ x: 0, y: 0 });
     const ref = useRef<HTMLDivElement>(null);
 
-    const isPiPSupported = 'documentPictureInPicture' in window;
-
     useEffect(() => {
         if (window.innerWidth < 768) {
              setPosition({ x: (window.innerWidth - 300) / 2, y: window.innerHeight - 140 });
@@ -176,17 +177,15 @@ const DraggableTimer: React.FC<{
                     {elapsedTime}
                 </div>
 
-                {isPiPSupported && (
-                    <button
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onTouchStart={(e) => e.stopPropagation()}
-                        onClick={onTogglePiP}
-                        className="h-10 w-10 bg-[#1e293b] hover:bg-black text-white rounded-full text-xs font-bold flex items-center justify-center active:scale-95 transition-all border border-slate-600"
-                        title="ピクチャーインピクチャーで表示"
-                    >
-                       <PictureInPicture2 size={16} />
-                    </button>
-                )}
+                <button
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    onClick={onTogglePiP}
+                    className="h-10 w-10 bg-[#1e293b] hover:bg-black text-white rounded-full text-xs font-bold flex items-center justify-center active:scale-95 transition-all border border-slate-600"
+                    title="ピクチャーインピクチャーで表示"
+                >
+                   <PictureInPicture2 size={16} />
+                </button>
 
                 <button
                     onMouseDown={(e) => e.stopPropagation()}
@@ -1751,13 +1750,51 @@ const ReportPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({
   );
 };
 
+// --- Sortable Client Chip ---
+const SortableClientChip: React.FC<{
+  client: Client;
+  isSelected: boolean;
+  onSelect: (id: string) => void;
+}> = ({ client, isSelected, onSelect }) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: client.id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : 0,
+  };
+
+  return (
+    <button
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      onClick={() => { if (!isDragging) onSelect(client.id); }}
+      className={`shrink-0 px-4 py-2.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-2 touch-none ${isDragging ? 'scale-105' : ''} ${isSelected ? 'bg-white text-slate-900 border-transparent shadow-lg shadow-black/20' : 'bg-slate-800/50 text-slate-300 border-slate-700 hover:bg-slate-700/50'}`}
+    >
+      <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: client.color }}></div>
+      {client.name}
+    </button>
+  );
+};
+
 const Dashboard: React.FC<{
   state: AppState;
   onStartTimer: (clientId: string, description: string, rateType?: 'hourly' | 'fixed', projectId?: string, category?: string) => void;
   onStopTimer: () => void;
   onUpdateDescription: (id: string, description: string) => void;
   onDeletePreset: (clientId: string, presetName: string) => void;
-}> = ({ state, onStartTimer, onStopTimer, onUpdateDescription, onDeletePreset }) => {
+  onReorderClients: (clients: Client[]) => void;
+}> = ({ state, onStartTimer, onStopTimer, onUpdateDescription, onDeletePreset, onReorderClients }) => {
     const activeEntry = state.activeEntryId ? state.entries.find(e => e.id === state.activeEntryId) : null;
     const activeClient = activeEntry ? state.clients.find(c => c.id === activeEntry.clientId) : null;
     const [elapsed, setElapsed] = useState(0);
@@ -1776,6 +1813,21 @@ const Dashboard: React.FC<{
     const [category, setCategory] = useState('');
     const [rateType, setRateType] = useState<'hourly' | 'fixed'>('hourly');
     const [selectedPresets, setSelectedPresets] = useState<string[]>([]);
+
+    const sensors = useSensors(
+        useSensor(PointerSensor, { activationConstraint: { delay: 300, tolerance: 5 } }),
+        useSensor(TouchSensor, { activationConstraint: { delay: 300, tolerance: 5 } })
+    );
+
+    const handleDragEnd = (event: DragEndEvent) => {
+        const { active, over } = event;
+        if (over && active.id !== over.id) {
+            const oldIndex = state.clients.findIndex(c => c.id === active.id);
+            const newIndex = state.clients.findIndex(c => c.id === over.id);
+            const reordered = arrayMove(state.clients, oldIndex, newIndex);
+            onReorderClients(reordered);
+        }
+    };
 
     useEffect(() => {
         if (state.clients.length > 0 && (!selectedClientId || !state.clients.find(c => c.id === selectedClientId))) {
@@ -1897,25 +1949,27 @@ const Dashboard: React.FC<{
                                 {state.clients.length === 0 ? (
                                     <div className="text-xs text-slate-500 font-bold py-2">クライアントを追加してください</div>
                                 ) : (
-                                    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
-                                        {state.clients.map(c => (
-                                            <button
-                                                key={c.id}
-                                                onClick={() => setSelectedClientId(c.id)}
-                                                className={`shrink-0 px-4 py-2.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-2 ${selectedClientId === c.id ? 'bg-white text-slate-900 border-transparent shadow-lg shadow-black/20' : 'bg-slate-800/50 text-slate-300 border-slate-700 hover:bg-slate-700/50'}`}
-                                            >
-                                                <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: c.color }}></div>
-                                                {c.name}
-                                            </button>
-                                        ))}
-                                    </div>
+                                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                                        <SortableContext items={state.clients.map(c => c.id)} strategy={horizontalListSortingStrategy}>
+                                            <div className="flex items-center gap-2 flex-wrap pb-1">
+                                                {state.clients.map(c => (
+                                                    <SortableClientChip
+                                                        key={c.id}
+                                                        client={c}
+                                                        isSelected={selectedClientId === c.id}
+                                                        onSelect={setSelectedClientId}
+                                                    />
+                                                ))}
+                                            </div>
+                                        </SortableContext>
+                                    </DndContext>
                                 )}
                              </div>
                              {/* Project selection */}
                              {selectedClient && selectedClient.projects && selectedClient.projects.filter(p => p.isActive).length > 0 && (
                                <div className="mb-4 px-1">
                                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">PROJECT</label>
-                                 <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+                                 <div className="flex items-center gap-2 flex-wrap pb-1">
                                    <button
                                      onClick={() => setSelectedProjectId('')}
                                      className={`shrink-0 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${!selectedProjectId ? 'bg-slate-700 text-white border-transparent' : 'bg-slate-800/50 text-slate-400 border-slate-700 hover:bg-slate-700/50'}`}
@@ -1942,7 +1996,7 @@ const Dashboard: React.FC<{
                              {clientCategories.length > 0 && (
                              <div className="mb-4 px-1">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">CATEGORY</label>
-                                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+                                <div className="flex items-center gap-2 flex-wrap pb-1">
                                     <button
                                         onClick={() => setCategory('')}
                                         className={`shrink-0 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${!category ? 'bg-slate-700 text-white border-transparent' : 'bg-slate-800/50 text-slate-400 border-slate-700 hover:bg-slate-700/50'}`}
@@ -2592,6 +2646,34 @@ const ClientsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = (
     );
 };
 
+// --- Management Page (Unified Clients + Projects for Mobile) ---
+const ManagementPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({ state, dispatch }) => {
+    const [activeTab, setActiveTab] = useState<'clients' | 'projects'>('clients');
+    return (
+        <div>
+            <div className="flex gap-1 mb-4 bg-slate-100 rounded-xl p-1">
+                <button
+                    onClick={() => setActiveTab('clients')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg text-sm font-bold transition-all ${activeTab === 'clients' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    <Users size={16} /> クライアント
+                </button>
+                <button
+                    onClick={() => setActiveTab('projects')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg text-sm font-bold transition-all ${activeTab === 'projects' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    <Briefcase size={16} /> 案件
+                </button>
+            </div>
+            {activeTab === 'clients' ? (
+                <ClientsPage state={state} dispatch={dispatch} />
+            ) : (
+                <ProjectsPage state={state} dispatch={dispatch} />
+            )}
+        </div>
+    );
+};
+
 // --- Main Layout Component ---
 const AppLayout: React.FC = () => {
   const { user, loading: authLoading, error: authError, signIn, signOut } = useAuth();
@@ -2602,6 +2684,8 @@ const AppLayout: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [dataLoaded, setDataLoaded] = useState(false);
   const pipWindowRef = useRef<Window | null>(null);
+  const notificationRef = useRef<Notification | null>(null);
+  const notificationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -2654,6 +2738,15 @@ const AppLayout: React.FC = () => {
         pipWindowRef.current = null;
         setIsPiPActive(false);
       }
+      // Clear notification on timer stop
+      if (notificationRef.current) {
+        notificationRef.current.close();
+        notificationRef.current = null;
+      }
+      if (notificationIntervalRef.current) {
+        clearInterval(notificationIntervalRef.current);
+        notificationIntervalRef.current = null;
+      }
       return;
     }
     const interval = setInterval(() => {
@@ -2682,15 +2775,53 @@ const AppLayout: React.FC = () => {
   }, [isPiPActive, activeEntry]);
 
   const handleTogglePiP = async () => {
-    if (!('documentPictureInPicture' in window)) {
-      alert('お使いのブラウザはPicture-in-Picture機能に対応していません。Chrome または Edge の最新版をお試しください。');
+    // If already active, close PiP or notification
+    if (isPiPActive) {
+      if (pipWindowRef.current) {
+        pipWindowRef.current.close();
+        pipWindowRef.current = null;
+      }
+      if (notificationRef.current) {
+        notificationRef.current.close();
+        notificationRef.current = null;
+      }
+      if (notificationIntervalRef.current) {
+        clearInterval(notificationIntervalRef.current);
+        notificationIntervalRef.current = null;
+      }
+      setIsPiPActive(false);
       return;
     }
 
-    if (isPiPActive && pipWindowRef.current) {
-      pipWindowRef.current.close();
-      pipWindowRef.current = null;
-      setIsPiPActive(false);
+    // If PiP not supported (mobile), use Notification API
+    if (!('documentPictureInPicture' in window)) {
+      if (!('Notification' in window)) {
+        alert('お使いのブラウザは通知機能に対応していません。');
+        return;
+      }
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        alert('通知の許可が必要です。ブラウザの設定から通知を許可してください。');
+        return;
+      }
+
+      const showNotification = () => {
+        if (!activeEntry) return;
+        const elapsed = formatTimeShort(Date.now() - activeEntry.startTime);
+        const clientName = state.clients.find(c => c.id === activeEntry.clientId)?.name || '作業中';
+        if (notificationRef.current) {
+          notificationRef.current.close();
+        }
+        notificationRef.current = new Notification('Logmee - 計測中', {
+          body: `${clientName} | ${elapsed}`,
+          tag: 'logmee-timer',
+          requireInteraction: true,
+        });
+      };
+
+      showNotification();
+      notificationIntervalRef.current = setInterval(showNotification, 30000);
+      setIsPiPActive(true);
       return;
     }
 
@@ -2874,6 +3005,11 @@ const AppLayout: React.FC = () => {
         case 'DELETE_SAVED_REPORT':
           await deleteSavedReportFromSupabase(payload);
           break;
+        case 'REORDER_CLIENTS':
+          for (const client of newState.clients) {
+            await saveClient(user.id, client);
+          }
+          break;
       }
     } catch (error) {
       console.error('Failed to sync to Supabase:', error);
@@ -2985,6 +3121,9 @@ const AppLayout: React.FC = () => {
             case 'DELETE_SAVED_REPORT':
                 newState.savedReports = prev.savedReports.filter(r => r.id !== action.payload);
                 break;
+            case 'REORDER_CLIENTS':
+                newState.clients = action.payload;
+                break;
         }
         saveState(newState);
 
@@ -3052,8 +3191,8 @@ const AppLayout: React.FC = () => {
             <div className="hidden md:block h-8"></div>
             <main className="p-4 md:p-8 max-w-6xl w-full mx-auto pb-24 md:pb-8">
                 <Routes>
-                    <Route path="/" element={<Dashboard state={state} onStartTimer={(clientId, description, rateType, projectId, category) => dispatch({type:'START_TIMER', payload:{clientId, description, rateType, projectId, category}})} onStopTimer={() => dispatch({type:'STOP_TIMER'})} onUpdateDescription={(id, description) => { const entry = state.entries.find(e => e.id === id); if (entry) dispatch({type:'UPDATE_ENTRY', payload:{...entry, description}}); }} onDeletePreset={(clientId, presetName) => dispatch({type: 'DELETE_CLIENT_PRESET', payload: {clientId, presetName}})} />} />
-                    <Route path="/clients" element={<ClientsPage state={state} dispatch={dispatch} />} />
+                    <Route path="/" element={<Dashboard state={state} onStartTimer={(clientId, description, rateType, projectId, category) => dispatch({type:'START_TIMER', payload:{clientId, description, rateType, projectId, category}})} onStopTimer={() => dispatch({type:'STOP_TIMER'})} onUpdateDescription={(id, description) => { const entry = state.entries.find(e => e.id === id); if (entry) dispatch({type:'UPDATE_ENTRY', payload:{...entry, description}}); }} onDeletePreset={(clientId, presetName) => dispatch({type: 'DELETE_CLIENT_PRESET', payload: {clientId, presetName}})} onReorderClients={(clients) => dispatch({type: 'REORDER_CLIENTS', payload: clients})} />} />
+                    <Route path="/clients" element={<ManagementPage state={state} dispatch={dispatch} />} />
                     <Route path="/projects" element={<ProjectsPage state={state} dispatch={dispatch} />} />
                     <Route path="/logs" element={<LogsPage state={state} dispatch={dispatch} />} />
                     <Route path="/reports" element={<ReportPage state={state} dispatch={dispatch} />} />
