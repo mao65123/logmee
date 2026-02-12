@@ -412,27 +412,26 @@ const UsagePage: React.FC = () => {
     return (
         <div className="space-y-6 animate-fade-in pb-20">
              <div className="mb-4 ml-1">
-                 <h2 className="text-xl font-black text-slate-800">Logmeeの使い方ガイド</h2>
-                 <p className="text-xs text-slate-500 font-bold mt-1">フリーランスのための時間管理・請求管理ツール</p>
+                 <h2 className="text-xl font-black text-slate-800">使い方ガイド</h2>
+                 <p className="text-xs text-slate-500 font-bold mt-1">はじめての方はこの流れで進めましょう</p>
             </div>
 
-            <div className="space-y-8">
+            <div className="space-y-6">
                 {/* Step 1 */}
                 <section>
-                    <div className="flex items-center gap-3 mb-3">
-                        <div className="w-8 h-8 rounded-full theme-bg contrast-text flex items-center justify-center font-black shadow-sm">1</div>
-                        <h3 className="font-bold text-slate-700">クライアントを登録する</h3>
+                    <div className="flex items-center gap-3 mb-2">
+                        <div className="w-7 h-7 rounded-full theme-bg contrast-text flex items-center justify-center font-black text-sm shadow-sm">1</div>
+                        <h3 className="font-bold text-slate-700 text-sm">クライアントを登録</h3>
                     </div>
-                    <Card className="!p-5 border-l-4 theme-border">
-                        <div className="flex gap-4">
-                            <div className="mt-1 text-slate-400"><Users size={24} /></div>
-                            <div className="text-sm text-slate-600 leading-relaxed">
-                                <p className="mb-2">まずは<span className="font-bold text-slate-800">「クライアント管理」</span>ページから取引先を登録しましょう。</p>
-                                <ul className="list-disc pl-4 space-y-1 text-xs font-bold text-slate-500">
-                                    <li>クライアントごとのテーマカラーを設定可能</li>
-                                    <li><span className="text-slate-700">基本時給</span>を設定すると、自動で売上を計算</li>
-                                    <li><span className="text-slate-700">案件</span>を登録して固定報酬を管理</li>
-                                    <li>請求書の<span className="text-slate-700">締日</span>を設定して、期間集計をスムーズに</li>
+                    <Card className="!p-4 border-l-4 theme-border">
+                        <div className="flex gap-3">
+                            <div className="mt-0.5 text-slate-400 shrink-0"><Users size={20} /></div>
+                            <div>
+                                <p className="text-xs text-slate-600 mb-2">下メニューの<span className="font-bold text-slate-800">「管理」</span>から登録します。</p>
+                                <ul className="list-disc pl-4 space-y-0.5 text-xs text-slate-500">
+                                    <li><span className="font-bold text-slate-700">時給</span>を設定 → 売上を自動計算</li>
+                                    <li><span className="font-bold text-slate-700">締日</span>を設定 → 報告書の期間指定が楽に</li>
+                                    <li><span className="font-bold text-slate-700">カテゴリ</span>を追加 → 作業を分類できる</li>
                                 </ul>
                             </div>
                         </div>
@@ -441,26 +440,42 @@ const UsagePage: React.FC = () => {
 
                 {/* Step 2 */}
                 <section>
-                    <div className="flex items-center gap-3 mb-3">
-                        <div className="w-8 h-8 rounded-full theme-bg contrast-text flex items-center justify-center font-black shadow-sm">2</div>
-                        <h3 className="font-bold text-slate-700">作業時間を計測する</h3>
+                    <div className="flex items-center gap-3 mb-2">
+                        <div className="w-7 h-7 rounded-full theme-bg contrast-text flex items-center justify-center font-black text-sm shadow-sm">2</div>
+                        <h3 className="font-bold text-slate-700 text-sm">案件を登録（任意）</h3>
                     </div>
-                    <Card className="!p-5 border-l-4 theme-border">
-                        <div className="flex gap-4">
-                            <div className="mt-1 text-slate-400"><Clock size={24} /></div>
-                            <div className="text-sm text-slate-600 leading-relaxed">
-                                <p className="mb-2"><span className="font-bold text-slate-800">「タイマー」</span>ページで日々の作業を記録します。</p>
-                                <div className="space-y-3 mt-3">
+                    <Card className="!p-4 border-l-4 theme-border">
+                        <div className="flex gap-3">
+                            <div className="mt-0.5 text-slate-400 shrink-0"><Briefcase size={20} /></div>
+                            <div>
+                                <p className="text-xs text-slate-600 mb-2"><span className="font-bold text-slate-800">「管理」→「案件」</span>タブから登録します。</p>
+                                <ul className="list-disc pl-4 space-y-0.5 text-xs text-slate-500">
+                                    <li>クライアントに紐づけて案件を作成</li>
+                                    <li><span className="font-bold text-slate-700">固定報酬</span>を設定 → 月次で売上管理</li>
+                                    <li>案件選択時は自動で「固定」報酬に切替</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </Card>
+                </section>
+
+                {/* Step 3 */}
+                <section>
+                    <div className="flex items-center gap-3 mb-2">
+                        <div className="w-7 h-7 rounded-full theme-bg contrast-text flex items-center justify-center font-black text-sm shadow-sm">3</div>
+                        <h3 className="font-bold text-slate-700 text-sm">作業時間を計測</h3>
+                    </div>
+                    <Card className="!p-4 border-l-4 theme-border">
+                        <div className="flex gap-3">
+                            <div className="mt-0.5 text-slate-400 shrink-0"><Clock size={20} /></div>
+                            <div>
+                                <p className="text-xs text-slate-600 mb-2"><span className="font-bold text-slate-800">「タイマー」</span>画面で作業を記録します。</p>
+                                <div className="space-y-1.5">
                                     <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg">
-                                        <Clock size={16} className="text-slate-500" />
-                                        <div className="text-xs"><span className="font-bold">時給</span>: 作業時間に応じて売上が自動計算されます</div>
+                                        <div className="text-xs text-slate-600">クライアント → 案件 → 内容を選んで<span className="font-bold">「作業を開始」</span></div>
                                     </div>
-                                    <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg">
-                                        <Briefcase size={16} className="text-slate-500" />
-                                        <div className="text-xs"><span className="font-bold">固定</span>: 時間計測のみ（売上は月次固定報酬で管理）</div>
-                                    </div>
-                                    <div className="text-xs text-slate-400 font-bold mt-2">
-                                        ※ 案件を選択すると自動で「固定」が選択されます。
+                                    <div className="text-xs text-slate-400">
+                                        長押しでクライアントの並び順を変更できます。よく使う作業内容は自動でプリセット保存されます。
                                     </div>
                                 </div>
                             </div>
@@ -468,43 +483,20 @@ const UsagePage: React.FC = () => {
                     </Card>
                 </section>
 
-                {/* Step 3 - 月次固定報酬 */}
-                <section>
-                    <div className="flex items-center gap-3 mb-3">
-                        <div className="w-8 h-8 rounded-full theme-bg contrast-text flex items-center justify-center font-black shadow-sm">3</div>
-                        <h3 className="font-bold text-slate-700">月次固定報酬を管理する</h3>
-                    </div>
-                    <Card className="!p-5 border-l-4 theme-border">
-                        <div className="flex gap-4">
-                            <div className="mt-1 text-slate-400"><Coins size={24} /></div>
-                            <div className="text-sm text-slate-600 leading-relaxed">
-                                <p className="mb-2">固定報酬は<span className="font-bold text-slate-800">「案件管理」</span>ページ下部で月ごとに管理できます。</p>
-                                <ul className="list-disc pl-4 space-y-1 text-xs font-bold text-slate-500">
-                                    <li>固定報酬を設定した案件が一覧表示されます</li>
-                                    <li>月を選択し、<span className="text-slate-700">トグルをON</span>にするとその月の売上に含まれます</li>
-                                    <li>時間計測なしでも売上に反映可能（月額契約など）</li>
-                                    <li>単発案件や月によって変動する契約にも対応</li>
-                                </ul>
-                            </div>
-                        </div>
-                    </Card>
-                </section>
-
                 {/* Step 4 */}
                 <section>
-                    <div className="flex items-center gap-3 mb-3">
-                        <div className="w-8 h-8 rounded-full theme-bg contrast-text flex items-center justify-center font-black shadow-sm">4</div>
-                        <h3 className="font-bold text-slate-700">履歴の確認・修正</h3>
+                    <div className="flex items-center gap-3 mb-2">
+                        <div className="w-7 h-7 rounded-full theme-bg contrast-text flex items-center justify-center font-black text-sm shadow-sm">4</div>
+                        <h3 className="font-bold text-slate-700 text-sm">月次報酬を管理</h3>
                     </div>
-                    <Card className="!p-5 border-l-4 theme-border">
-                        <div className="flex gap-4">
-                            <div className="mt-1 text-slate-400"><History size={24} /></div>
-                            <div className="text-sm text-slate-600 leading-relaxed">
-                                <p className="mb-2"><span className="font-bold text-slate-800">「稼働履歴」</span>ページで記録を確認できます。</p>
-                                <ul className="list-disc pl-4 space-y-1 text-xs font-bold text-slate-500">
-                                    <li>履歴をタップして<span className="text-slate-700">時間や内容を修正</span>できます</li>
-                                    <li>時間の入力ミスや、計測忘れも後から編集可能です</li>
-                                    <li>右上のカレンダーで表示月を切り替えられます</li>
+                    <Card className="!p-4 border-l-4 theme-border">
+                        <div className="flex gap-3">
+                            <div className="mt-0.5 text-slate-400 shrink-0"><Coins size={20} /></div>
+                            <div>
+                                <p className="text-xs text-slate-600 mb-2"><span className="font-bold text-slate-800">「管理」→「案件」</span>タブ下部で月ごとにON/OFFします。</p>
+                                <ul className="list-disc pl-4 space-y-0.5 text-xs text-slate-500">
+                                    <li>トグルONでその月の売上に固定報酬を加算</li>
+                                    <li>月額契約や単発案件にも対応</li>
                                 </ul>
                             </div>
                         </div>
@@ -513,29 +505,41 @@ const UsagePage: React.FC = () => {
 
                 {/* Step 5 */}
                 <section>
-                    <div className="flex items-center gap-3 mb-3">
-                        <div className="w-8 h-8 rounded-full theme-bg contrast-text flex items-center justify-center font-black shadow-sm">5</div>
-                        <h3 className="font-bold text-slate-700">報告書・請求書を作成</h3>
+                    <div className="flex items-center gap-3 mb-2">
+                        <div className="w-7 h-7 rounded-full theme-bg contrast-text flex items-center justify-center font-black text-sm shadow-sm">5</div>
+                        <h3 className="font-bold text-slate-700 text-sm">履歴を確認・修正</h3>
                     </div>
-                    <Card className="!p-5 border-l-4 theme-border">
-                        <div className="flex gap-4">
-                            <div className="mt-1 text-slate-400"><FileText size={24} /></div>
-                            <div className="text-sm text-slate-600 leading-relaxed">
-                                <p className="mb-2"><span className="font-bold text-slate-800">「報告書」</span>ページでPDFを生成します。</p>
-                                <div className="space-y-2 mt-2">
-                                    <div className="flex gap-2">
-                                        <div className="min-w-[4px] h-4 bg-slate-300 rounded-full mt-1"></div>
-                                        <div className="text-xs"><span className="font-bold text-slate-700">期間指定</span>: 「今月」「先月」ボタンまたは日付指定で範囲を選択</div>
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <div className="min-w-[4px] h-4 bg-slate-300 rounded-full mt-1"></div>
-                                        <div className="text-xs"><span className="font-bold text-slate-700">表示オプション</span>: 「同日の作業をまとめる」機能で、すっきりした明細を作成可能</div>
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <div className="min-w-[4px] h-4 bg-slate-300 rounded-full mt-1"></div>
-                                        <div className="text-xs"><span className="font-bold text-slate-700">CSV出力</span>: 他のソフトで集計したい場合に便利です</div>
-                                    </div>
-                                </div>
+                    <Card className="!p-4 border-l-4 theme-border">
+                        <div className="flex gap-3">
+                            <div className="mt-0.5 text-slate-400 shrink-0"><History size={20} /></div>
+                            <div>
+                                <p className="text-xs text-slate-600 mb-2"><span className="font-bold text-slate-800">「履歴」</span>で日々の記録を確認できます。</p>
+                                <ul className="list-disc pl-4 space-y-0.5 text-xs text-slate-500">
+                                    <li>タップで時間・内容の修正が可能</li>
+                                    <li>クライアント・案件・カテゴリでフィルタ</li>
+                                    <li>月切替や日付範囲指定にも対応</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </Card>
+                </section>
+
+                {/* Step 6 */}
+                <section>
+                    <div className="flex items-center gap-3 mb-2">
+                        <div className="w-7 h-7 rounded-full theme-bg contrast-text flex items-center justify-center font-black text-sm shadow-sm">6</div>
+                        <h3 className="font-bold text-slate-700 text-sm">報告書を作成</h3>
+                    </div>
+                    <Card className="!p-4 border-l-4 theme-border">
+                        <div className="flex gap-3">
+                            <div className="mt-0.5 text-slate-400 shrink-0"><FileText size={20} /></div>
+                            <div>
+                                <p className="text-xs text-slate-600 mb-2"><span className="font-bold text-slate-800">「報告書」</span>でPDFを生成・印刷します。</p>
+                                <ul className="list-disc pl-4 space-y-0.5 text-xs text-slate-500">
+                                    <li>「今月」「先月」ボタンで締日に合わせた期間指定</li>
+                                    <li>同日の作業をまとめる、案件フィルタなどオプション多数</li>
+                                    <li>CSV出力にも対応</li>
+                                </ul>
                             </div>
                         </div>
                     </Card>
@@ -543,40 +547,40 @@ const UsagePage: React.FC = () => {
 
                 {/* Tips */}
                 <section>
-                     <div className="flex items-center gap-2 mb-3 mt-8">
-                        <Lightbulb size={20} className="text-yellow-500 fill-current" />
-                        <h3 className="font-bold text-slate-700">便利な機能</h3>
+                     <div className="flex items-center gap-2 mb-3 mt-4">
+                        <Lightbulb size={18} className="text-yellow-500 fill-current" />
+                        <h3 className="font-bold text-slate-700 text-sm">知っておくと便利</h3>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                          <Card className="!p-4 bg-slate-800 text-white">
-                             <div className="font-bold text-sm mb-2 flex items-center gap-2"><PictureInPicture2 size={16} /> フローティングタイマー</div>
-                             <div className="text-xs text-slate-300">
-                                 タイマー計測中は画面下部に浮遊バーが表示されます。PCのChrome/Edgeでは、PiPアイコンをクリックすると小窓で表示でき、他のアプリを使いながらでもタイマーを確認・停止できます。
+                             <div className="font-bold text-xs mb-1 flex items-center gap-2"><PictureInPicture2 size={14} /> フローティングタイマー</div>
+                             <div className="text-[11px] text-slate-300 leading-relaxed">
+                                 計測中は画面下部にバーが出現。PCではPiP小窓、スマホでは通知で経過時間を確認できます。
                              </div>
                          </Card>
                          <Card className="!p-4 bg-slate-50">
-                             <div className="font-bold text-sm mb-2 flex items-center gap-2 text-slate-700"><Flame size={16} className="text-orange-400" /> タスクプリセット</div>
-                             <div className="text-xs text-slate-500">
-                                 よく使う作業内容は自動でプリセット登録されます。タイマー画面でワンタップで入力できるので、毎回入力する手間が省けます。
+                             <div className="font-bold text-xs mb-1 flex items-center gap-2 text-slate-700"><Flame size={14} className="text-orange-400" /> タスクプリセット</div>
+                             <div className="text-[11px] text-slate-500 leading-relaxed">
+                                 入力した作業内容は自動保存。次回からワンタップで入力できます。
                              </div>
                          </Card>
                          <Card className="!p-4 bg-slate-50">
-                             <div className="font-bold text-sm mb-2 flex items-center gap-2 text-slate-700"><Settings size={16} /> テーマカラー変更</div>
-                             <div className="text-xs text-slate-500">
-                                 設定画面からアプリ全体のテーマカラーを変更できます。グラデーションも選択可能です。
+                             <div className="font-bold text-xs mb-1 flex items-center gap-2 text-slate-700"><BarChart2 size={14} /> データ分析</div>
+                             <div className="text-[11px] text-slate-500 leading-relaxed">
+                                 クライアント別の稼働時間・売上をグラフで確認できます。
                              </div>
                          </Card>
                          <Card className="!p-4 bg-slate-50">
-                             <div className="font-bold text-sm mb-2 flex items-center gap-2 text-slate-700"><BarChart2 size={16} /> データ分析</div>
-                             <div className="text-xs text-slate-500">
-                                 「データ分析」ページでは、クライアントごとの稼働割合や、日々の稼働推移をグラフで可視化できます。
+                             <div className="font-bold text-xs mb-1 flex items-center gap-2 text-slate-700"><Cloud size={14} /> データ同期</div>
+                             <div className="text-[11px] text-slate-500 leading-relaxed">
+                                 Googleログインでデータをクラウド保存。別端末でもアクセスできます。
                              </div>
                          </Card>
                     </div>
                 </section>
             </div>
 
-            <div className="mt-12 text-center">
+            <div className="mt-8 text-center">
                  <Link to="/" className="inline-flex items-center gap-2 px-6 py-3 rounded-full theme-bg contrast-text font-black text-sm shadow-md hover:shadow-lg transition-all active:scale-95">
                      さっそく使い始める <ArrowRight size={16} />
                  </Link>
