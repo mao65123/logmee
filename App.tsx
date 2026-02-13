@@ -552,9 +552,9 @@ const UsagePage: React.FC = () => {
                         <h3 className="font-bold text-slate-700 text-sm">知っておくと便利</h3>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                         <Card className="!p-4 bg-slate-800 text-white">
-                             <div className="font-bold text-xs mb-1 flex items-center gap-2"><PictureInPicture2 size={14} /> フローティングタイマー</div>
-                             <div className="text-[11px] text-slate-100 leading-relaxed">
+                         <Card className="!p-4 bg-slate-50">
+                             <div className="font-bold text-xs mb-1 flex items-center gap-2 text-slate-700"><PictureInPicture2 size={14} /> フローティングタイマー</div>
+                             <div className="text-[11px] text-slate-500 leading-relaxed">
                                  計測中は画面下部にバーが出現。PCではPiP小窓、スマホでは通知で経過時間を確認できます。
                              </div>
                          </Card>
