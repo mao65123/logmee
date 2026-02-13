@@ -554,7 +554,7 @@ const UsagePage: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                          <Card className="!p-4 bg-slate-800 text-white">
                              <div className="font-bold text-xs mb-1 flex items-center gap-2"><PictureInPicture2 size={14} /> フローティングタイマー</div>
-                             <div className="text-[11px] text-slate-300 leading-relaxed">
+                             <div className="text-[11px] text-slate-100 leading-relaxed">
                                  計測中は画面下部にバーが出現。PCではPiP小窓、スマホでは通知で経過時間を確認できます。
                              </div>
                          </Card>
