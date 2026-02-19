@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { HashRouter, Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-router-dom';
 import {
   Play, Square, Plus, Clock, Users, FileText,
-  Settings, Home, Edit2, CheckCircle, X, Calculator, BellRing, Flame, Trophy, Activity, Printer, Calendar, Eye, Download, Check, AlertTriangle, Briefcase, Trash2, Maximize2, Palette, LayoutList, History, Coins, PictureInPicture2, GripVertical, ChevronLeft, ChevronRight, BarChart2, TrendingUp, DollarSign, PieChart as PieChartIcon, HelpCircle, BookOpen, Lightbulb, MousePointerClick, ArrowRight, LogOut, Cloud, CloudOff
+  Settings, Home, Edit2, CheckCircle, X, Calculator, BellRing, Flame, Trophy, Activity, Printer, Calendar, Eye, Download, Check, AlertTriangle, Briefcase, Trash2, Maximize2, Palette, LayoutList, History, Coins, PictureInPicture2, GripVertical, ChevronLeft, ChevronRight, BarChart2, TrendingUp, DollarSign, PieChart as PieChartIcon, HelpCircle, BookOpen, Lightbulb, MousePointerClick, ArrowRight, LogOut, Cloud, CloudOff, Search, RotateCcw
 } from 'lucide-react';
 import { ResponsiveContainer, Cell, BarChart, Bar, XAxis, Tooltip as RechartsTooltip, PieChart, Pie, Legend } from 'recharts';
 
@@ -103,12 +103,25 @@ const DraggableTimer: React.FC<{
     onTogglePiP: () => void;
     isPiPActive: boolean;
 }> = ({ activeClientName, onStop, elapsedTime, onTogglePiP, isPiPActive }) => {
-    const [position, setPosition] = useState({ x: window.innerWidth - 340, y: window.innerHeight - 100 });
+    const [position, setPosition] = useState(() => {
+        try {
+            const saved = localStorage.getItem('logmee_timer_pos');
+            if (saved) {
+                const p = JSON.parse(saved);
+                if (p.x >= 0 && p.y >= 0 && p.x < window.innerWidth && p.y < window.innerHeight) return p;
+            }
+        } catch {}
+        return { x: window.innerWidth - 340, y: window.innerHeight - 100 };
+    });
     const [isDragging, setIsDragging] = useState(false);
     const offset = useRef({ x: 0, y: 0 });
     const ref = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
+        try {
+            const saved = localStorage.getItem('logmee_timer_pos');
+            if (saved) return; // 保存位置がある場合はスキップ
+        } catch {}
         if (window.innerWidth < 768) {
              setPosition({ x: (window.innerWidth - 300) / 2, y: window.innerHeight - 140 });
         }
@@ -136,6 +149,7 @@ const DraggableTimer: React.FC<{
 
     const handleEnd = () => {
         setIsDragging(false);
+        try { localStorage.setItem('logmee_timer_pos', JSON.stringify(position)); } catch {}
     };
 
     useEffect(() => {
@@ -599,6 +613,7 @@ type ClientStat = {
 
 const AnalyticsPage: React.FC<{ state: AppState }> = ({ state }) => {
     const [displayMonth, setDisplayMonth] = useState(new Date());
+    const [analyticsTab, setAnalyticsTab] = useState<'overview' | 'daily' | 'category'>('overview');
 
     const handlePrevMonth = () => setDisplayMonth(new Date(displayMonth.getFullYear(), displayMonth.getMonth() - 1, 1));
     const handleNextMonth = () => setDisplayMonth(new Date(displayMonth.getFullYear(), displayMonth.getMonth() + 1, 1));
@@ -738,6 +753,21 @@ const AnalyticsPage: React.FC<{ state: AppState }> = ({ state }) => {
                 </Card>
             </div>
 
+            {/* タブセレクター */}
+            <div className="flex bg-slate-100 rounded-xl p-1 gap-1">
+                {([['overview', '概要'], ['daily', '日次'], ['category', 'カテゴリ']] as const).map(([key, label]) => (
+                    <button
+                        key={key}
+                        onClick={() => setAnalyticsTab(key)}
+                        className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${analyticsTab === key ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                        {label}
+                    </button>
+                ))}
+            </div>
+
+            {/* 概要タブ */}
+            {analyticsTab === 'overview' && <>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Card className="!p-4 min-h-[300px]">
                     <div className="flex items-center gap-2 mb-4">
@@ -777,90 +807,7 @@ const AnalyticsPage: React.FC<{ state: AppState }> = ({ state }) => {
                         )}
                     </div>
                 </Card>
-
-                <Card className="!p-4 min-h-[300px]">
-                    <div className="flex items-center gap-2 mb-4">
-                        <Activity size={16} className="text-slate-400" />
-                        <h3 className="text-xs font-black text-slate-700 uppercase">日次稼働推移</h3>
-                    </div>
-                    <div className="h-56 w-full">
-                         <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={analysis.dailyData}>
-                                <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{fontSize: 9, fill: '#94a3b8'}} interval={4} />
-                                <RechartsTooltip 
-                                    cursor={{fill: '#f8fafc'}}
-                                    contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}}
-                                    formatter={(value: number) => [`${value.toFixed(2)} h`, '稼働']}
-                                />
-                                <Bar dataKey="hours" fill="#cbd5e1" radius={[2, 2, 2, 2]} barSize={4} />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </div>
-                </Card>
             </div>
-
-            {/* カテゴリ別 稼働割合 */}
-            {analysis.categoryPieData.length > 0 && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Card className="!p-4 min-h-[300px]">
-                        <div className="flex items-center gap-2 mb-4">
-                            <PieChartIcon size={16} className="text-slate-400" />
-                            <h3 className="text-xs font-black text-slate-700 uppercase">カテゴリ別 時間割合</h3>
-                        </div>
-                        <div className="h-56 w-full flex items-center justify-center">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <PieChart>
-                                    <Pie
-                                        data={analysis.categoryPieData}
-                                        innerRadius={60}
-                                        outerRadius={80}
-                                        paddingAngle={5}
-                                        dataKey="value"
-                                    >
-                                        {analysis.categoryPieData.map((entry, index) => (
-                                            <Cell key={`cat-cell-${index}`} fill={entry.color} stroke="none" />
-                                        ))}
-                                    </Pie>
-                                    <Legend
-                                        verticalAlign="bottom"
-                                        height={36}
-                                        iconType="circle"
-                                        iconSize={8}
-                                        formatter={(value) => <span className="text-[10px] font-bold text-slate-600 ml-1">{value}</span>}
-                                    />
-                                    <RechartsTooltip
-                                        contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}}
-                                        formatter={(value: number) => `${value.toFixed(2)} h`}
-                                    />
-                                </PieChart>
-                            </ResponsiveContainer>
-                        </div>
-                    </Card>
-
-                    <Card className="!p-4 min-h-[300px]">
-                        <div className="flex items-center gap-2 mb-4">
-                            <LayoutList size={16} className="text-slate-400" />
-                            <h3 className="text-xs font-black text-slate-700 uppercase">カテゴリ別 時間一覧</h3>
-                        </div>
-                        <div className="space-y-2">
-                            {analysis.categoryPieData.map((cat) => (
-                                <div key={cat.name} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg">
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-2.5 h-2.5 rounded-full" style={{backgroundColor: cat.color}}></div>
-                                        <span className="text-xs font-bold text-slate-700">{cat.name}</span>
-                                    </div>
-                                    <div className="flex items-center gap-4">
-                                        <span className="font-mono text-xs font-bold text-slate-600">{cat.value.toFixed(2)} h</span>
-                                        <span className="text-[10px] font-bold text-slate-400 min-w-[40px] text-right">
-                                            {analysis.totalHours > 0 ? ((cat.value / analysis.totalHours) * 100).toFixed(1) : 0}%
-                                        </span>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </Card>
-                </div>
-            )}
 
             <div className="bg-white rounded-3xl shadow-sm overflow-hidden">
                 <div className="p-4 border-b border-slate-100 flex items-center gap-2">
@@ -941,6 +888,99 @@ const AnalyticsPage: React.FC<{ state: AppState }> = ({ state }) => {
                     </div>
                 </div>
             </div>
+            </>}
+
+            {/* 日次タブ */}
+            {analyticsTab === 'daily' && (
+                <Card className="!p-4 min-h-[300px]">
+                    <div className="flex items-center gap-2 mb-4">
+                        <Activity size={16} className="text-slate-400" />
+                        <h3 className="text-xs font-black text-slate-700 uppercase">日次稼働推移</h3>
+                    </div>
+                    <div className="h-56 w-full">
+                         <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={analysis.dailyData}>
+                                <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{fontSize: 9, fill: '#94a3b8'}} interval={4} />
+                                <RechartsTooltip
+                                    cursor={{fill: '#f8fafc'}}
+                                    contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}}
+                                    formatter={(value: number) => [`${value.toFixed(2)} h`, '稼働']}
+                                />
+                                <Bar dataKey="hours" fill="#cbd5e1" radius={[2, 2, 2, 2]} barSize={4} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </Card>
+            )}
+
+            {/* カテゴリタブ */}
+            {analyticsTab === 'category' && (
+                analysis.categoryPieData.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Card className="!p-4 min-h-[300px]">
+                            <div className="flex items-center gap-2 mb-4">
+                                <PieChartIcon size={16} className="text-slate-400" />
+                                <h3 className="text-xs font-black text-slate-700 uppercase">カテゴリ別 時間割合</h3>
+                            </div>
+                            <div className="h-56 w-full flex items-center justify-center">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie
+                                            data={analysis.categoryPieData}
+                                            innerRadius={60}
+                                            outerRadius={80}
+                                            paddingAngle={5}
+                                            dataKey="value"
+                                        >
+                                            {analysis.categoryPieData.map((entry, index) => (
+                                                <Cell key={`cat-cell-${index}`} fill={entry.color} stroke="none" />
+                                            ))}
+                                        </Pie>
+                                        <Legend
+                                            verticalAlign="bottom"
+                                            height={36}
+                                            iconType="circle"
+                                            iconSize={8}
+                                            formatter={(value) => <span className="text-[10px] font-bold text-slate-600 ml-1">{value}</span>}
+                                        />
+                                        <RechartsTooltip
+                                            contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}}
+                                            formatter={(value: number) => `${value.toFixed(2)} h`}
+                                        />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </Card>
+
+                        <Card className="!p-4 min-h-[300px]">
+                            <div className="flex items-center gap-2 mb-4">
+                                <LayoutList size={16} className="text-slate-400" />
+                                <h3 className="text-xs font-black text-slate-700 uppercase">カテゴリ別 時間一覧</h3>
+                            </div>
+                            <div className="space-y-2">
+                                {analysis.categoryPieData.map((cat) => (
+                                    <div key={cat.name} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-2.5 h-2.5 rounded-full" style={{backgroundColor: cat.color}}></div>
+                                            <span className="text-xs font-bold text-slate-700">{cat.name}</span>
+                                        </div>
+                                        <div className="flex items-center gap-4">
+                                            <span className="font-mono text-xs font-bold text-slate-600">{cat.value.toFixed(2)} h</span>
+                                            <span className="text-[10px] font-bold text-slate-400 min-w-[40px] text-right">
+                                                {analysis.totalHours > 0 ? ((cat.value / analysis.totalHours) * 100).toFixed(1) : 0}%
+                                            </span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </Card>
+                    </div>
+                ) : (
+                    <Card className="!p-4">
+                        <div className="text-center text-xs text-slate-400 font-bold py-8">カテゴリデータがありません</div>
+                    </Card>
+                )
+            )}
         </div>
     );
 };
@@ -955,6 +995,15 @@ const LogsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({ s
   const [filterEndDate, setFilterEndDate] = useState('');
 
   const isDateFilterActive = filterStartDate !== '' || filterEndDate !== '';
+  const isAnyFilterActive = isDateFilterActive || filterClientId !== 'all' || filterProjectId !== 'all' || filterCategory !== 'all';
+
+  const clearAllFilters = () => {
+    setFilterStartDate('');
+    setFilterEndDate('');
+    setFilterClientId('all');
+    setFilterProjectId('all');
+    setFilterCategory('all');
+  };
 
   const handlePrevMonth = () => {
     setDisplayMonth(new Date(displayMonth.getFullYear(), displayMonth.getMonth() - 1, 1));
@@ -1021,11 +1070,49 @@ const LogsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({ s
     return groups;
   }, [state.entries, filterClientId, filterProjectId, filterCategory, displayMonth, filterStartDate, filterEndDate, isDateFilterActive]);
 
+  const filteredEntries = useMemo(() => {
+    return Object.values(entriesByDate).flatMap((g: any) => g.entries as TimeEntry[]);
+  }, [entriesByDate]);
+
+  const filteredEntryCount = filteredEntries.length;
+
+  const filteredSummary = useMemo(() => {
+    const byCategory: { [key: string]: number } = {};
+    const byProject: { [key: string]: { name: string; clientName: string; hours: number } } = {};
+    let totalHours = 0;
+
+    filteredEntries.forEach(e => {
+      const hours = e.endTime ? (e.endTime - e.startTime) / 3600000 : 0;
+      totalHours += hours;
+
+      const catKey = e.category || '未分類';
+      byCategory[catKey] = (byCategory[catKey] || 0) + hours;
+
+      if (e.projectId) {
+        if (!byProject[e.projectId]) {
+          const client = state.clients.find(c => c.id === e.clientId);
+          const project = client?.projects?.find(p => p.id === e.projectId);
+          byProject[e.projectId] = { name: project?.name || '不明', clientName: client?.name || '', hours: 0 };
+        }
+        byProject[e.projectId].hours += hours;
+      }
+    });
+
+    return {
+      totalHours,
+      categories: Object.entries(byCategory).sort((a, b) => b[1] - a[1]),
+      projects: Object.values(byProject).sort((a, b) => b.hours - a.hours),
+    };
+  }, [filteredEntries, state.clients]);
+
   return (
     <div className="space-y-4 animate-fade-in pb-20">
       <div className="flex flex-col gap-4 px-1">
         <div className="flex justify-between items-center">
-             <h2 className="text-lg font-black text-slate-800">稼働履歴</h2>
+             <div className="flex items-center gap-2">
+                 <h2 className="text-lg font-black text-slate-800">稼働履歴</h2>
+                 <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{filteredEntryCount}件</span>
+             </div>
              <div className={`flex items-center bg-white rounded-xl border border-slate-200 p-1 shadow-sm transition-opacity ${isDateFilterActive ? 'opacity-40' : ''}`}>
                  <button onClick={handlePrevMonth} className="p-1 hover:bg-slate-100 rounded-lg"><ChevronLeft size={18} className="text-slate-500" /></button>
                  <span className="text-xs font-bold text-slate-800 px-3 min-w-[80px] text-center">
@@ -1043,10 +1130,16 @@ const LogsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({ s
                 <input type="date" value={filterEndDate} onChange={e => setFilterEndDate(e.target.value)} className="text-xs font-bold text-slate-700 outline-none bg-transparent min-w-0 flex-1" />
             </div>
             {isDateFilterActive && (
+                <>
                 <button onClick={() => { setFilterStartDate(''); setFilterEndDate(''); }} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-500 transition-all">
                     <X size={12} />
                     クリア
                 </button>
+                <button onClick={() => { setFilterStartDate(''); setFilterEndDate(''); }} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 text-xs font-bold text-slate-500 transition-all">
+                    <RotateCcw size={12} />
+                    月表示に戻す
+                </button>
+                </>
             )}
         </div>
 
@@ -1090,7 +1183,55 @@ const LogsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({ s
             ))}
           </div>
         )}
+
+        {isAnyFilterActive && (
+            <button onClick={clearAllFilters} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-xs font-bold text-red-500 transition-all self-start">
+                <X size={12} />
+                フィルター全解除
+            </button>
+        )}
       </div>
+
+      {/* サマリー */}
+      {filteredEntryCount > 0 && (filteredSummary.categories.length > 1 || filteredSummary.projects.length > 0) && (
+        <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <div className="flex items-center gap-2 mb-3">
+                <BarChart2 size={14} className="text-slate-400" />
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">合計 {filteredSummary.totalHours.toFixed(2)}h</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {filteredSummary.categories.length > 1 && (
+                    <div>
+                        <div className="text-[10px] font-bold text-slate-400 mb-2">カテゴリ別</div>
+                        <div className="space-y-1.5">
+                            {filteredSummary.categories.map(([cat, hours]) => (
+                                <div key={cat} className="flex items-center justify-between">
+                                    <span className="text-xs font-bold text-slate-600 truncate">{cat}</span>
+                                    <span className="text-xs font-mono font-bold text-slate-700 shrink-0 ml-2">{hours.toFixed(2)}h</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+                {filteredSummary.projects.length > 0 && (
+                    <div>
+                        <div className="text-[10px] font-bold text-slate-400 mb-2">案件別</div>
+                        <div className="space-y-1.5">
+                            {filteredSummary.projects.map(p => (
+                                <div key={p.name} className="flex items-center justify-between">
+                                    <div className="flex-1 min-w-0">
+                                        <span className="text-xs font-bold text-slate-600 truncate block">{p.name}</span>
+                                        {p.clientName && <span className="text-[10px] text-slate-400">{p.clientName}</span>}
+                                    </div>
+                                    <span className="text-xs font-mono font-bold text-slate-700 shrink-0 ml-2">{p.hours.toFixed(2)}h</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+      )}
 
       {/* Desktop: Table view */}
       <div className="hidden md:block bg-white rounded-lg border border-slate-200 overflow-hidden">
@@ -1262,6 +1403,7 @@ const ReportPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({
   const [showPreview, setShowPreview] = useState(false);
   const [previewData, setPreviewData] = useState<any>(null);
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
+  const [openSection, setOpenSection] = useState<'data' | 'doc' | 'options' | null>('data');
 
   useEffect(() => {
       const gName = reportUser?.user_metadata?.full_name || reportUser?.user_metadata?.name || '';
@@ -1507,7 +1649,13 @@ const ReportPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({
   return (
     <div className="space-y-6 animate-fade-in pb-20">
       <h2 className="text-lg font-black text-slate-800 ml-1">報告書作成</h2>
-      <Card className="!rounded-3xl shadow-sm space-y-6">
+      <Card className="!rounded-3xl shadow-sm space-y-0">
+          {/* Section 1: 対象データ */}
+          <button onClick={() => setOpenSection(openSection === 'data' ? null : 'data')} className="w-full flex items-center justify-between p-4 text-left">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Calendar size={12}/> 対象データ</span>
+              <ChevronRight size={14} className={`text-slate-400 transition-transform ${openSection === 'data' ? 'rotate-90' : ''}`} />
+          </button>
+          {openSection === 'data' && <div className="px-4 pb-4 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                   <label className="text-[10px] font-black text-slate-400 ml-1 mb-2 block uppercase tracking-widest">対象期間</label>
@@ -1584,10 +1732,18 @@ const ReportPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({
                   </div>
               );
           })()}
-          <div className="border-t border-slate-100 pt-4">
-             <label className="text-[10px] font-black text-slate-400 ml-1 mb-3 block uppercase tracking-widest flex items-center gap-2">
-                 <FileText size={12}/> 書類設定
-             </label>
+          </div>}
+          {openSection !== 'data' && (
+              <div className="px-4 pb-2 text-[10px] text-slate-400 font-bold">
+                  {(() => { const c = state.clients.find(c => c.id === selectedClientId); return `${startDate} 〜 ${endDate} / ${c?.name || '未選択'}`; })()}
+              </div>
+          )}
+          {/* Section 2: 書類情報 */}
+          <button onClick={() => setOpenSection(openSection === 'doc' ? null : 'doc')} className="w-full flex items-center justify-between p-4 text-left border-t border-slate-100">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><FileText size={12}/> 書類情報</span>
+              <ChevronRight size={14} className={`text-slate-400 transition-transform ${openSection === 'doc' ? 'rotate-90' : ''}`} />
+          </button>
+          {openSection === 'doc' && <div className="px-4 pb-4">
              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                  <div>
                     <label className="text-[10px] font-bold text-slate-400 mb-1 block">タイトル</label>
@@ -1606,11 +1762,21 @@ const ReportPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({
                 <label className="text-[10px] font-bold text-slate-400 mb-1 block">業務名・件名 (任意)</label>
                 <Input value={reportBusinessName} onChange={e => setReportBusinessName(e.target.value)} placeholder="例: 〇〇開発案件、事務サポート業務" />
              </div>
-          </div>
-          <div className="border-t border-slate-100 pt-4">
-             <label className="text-[10px] font-black text-slate-400 ml-1 mb-3 block uppercase tracking-widest flex items-center gap-2">
-                 <LayoutList size={12}/> 明細オプション
-             </label>
+          </div>}
+          {openSection !== 'doc' && (
+              <div className="px-4 pb-2 text-[10px] text-slate-400 font-bold">
+                  {reportTitle} / {customUserName}
+              </div>
+          )}
+          {/* Section 3: 明細オプション */}
+          <button onClick={() => setOpenSection(openSection === 'options' ? null : 'options')} className="w-full flex items-center justify-between p-4 text-left border-t border-slate-100">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><LayoutList size={12}/> 明細オプション</span>
+              <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-400 font-bold">{[showTimeRange, showDuration, showProject, showCategory, showTotalHoursOnly, showRevenue].filter(Boolean).length}/6 表示</span>
+                  <ChevronRight size={14} className={`text-slate-400 transition-transform ${openSection === 'options' ? 'rotate-90' : ''}`} />
+              </div>
+          </button>
+          {openSection === 'options' && <div className="px-4 pb-4">
              <div className="space-y-3">
                  <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl">
                     <div className="flex items-center gap-2">
@@ -1662,7 +1828,7 @@ const ReportPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({
                                  {showTotalHoursOnly && <Check size={10} className="text-white" />}
                              </div>
                              <input type="checkbox" className="hidden" checked={showTotalHoursOnly} onChange={e => setShowTotalHoursOnly(e.target.checked)} />
-                             <span className="text-xs font-bold text-slate-700">合計時間</span>
+                             <span className="text-xs font-bold text-slate-700">合計時間サマリー</span>
                          </label>
                          <label className="flex items-center gap-2 cursor-pointer">
                              <div className={`w-4 h-4 rounded border flex items-center justify-center ${showRevenue ? 'bg-slate-800 border-slate-800' : 'bg-white border-slate-300'}`}>
@@ -1674,8 +1840,14 @@ const ReportPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = ({
                      </div>
                  </div>
              </div>
-          </div>
-          <div className="pt-2 space-y-3">
+          </div>}
+          {/* インラインサマリー + アクションボタン */}
+          {filteredEntriesRaw.length > 0 && (
+              <div className="px-4 pt-2 text-[10px] text-slate-500 font-bold text-center">
+                  {filteredEntriesRaw.length}件 / {(filteredEntriesRaw.reduce((sum, e) => sum + (e.endTime ? (e.endTime - e.startTime) / 3600000 : 0), 0)).toFixed(2)}h
+              </div>
+          )}
+          <div className="p-4 pt-2 space-y-3">
               <Button onClick={handlePreviewReport} disabled={!selectedClientId} className="w-full h-12 rounded-2xl theme-bg contrast-text border-none font-black">
                   <Eye size={18} /> プレビューしてPDF作成
               </Button>
@@ -1946,6 +2118,21 @@ const Dashboard: React.FC<{
     const [category, setCategory] = useState('');
     const [rateType, setRateType] = useState<'hourly' | 'fixed'>('hourly');
     const [selectedPresets, setSelectedPresets] = useState<string[]>([]);
+    const [clientSearchOpen, setClientSearchOpen] = useState(false);
+    const [clientSearchQuery, setClientSearchQuery] = useState('');
+    const clientSearchRef = useRef<HTMLDivElement>(null);
+
+    // 検索ドロップダウン外クリックで閉じる
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (clientSearchRef.current && !clientSearchRef.current.contains(e.target as Node)) {
+                setClientSearchOpen(false);
+                setClientSearchQuery('');
+            }
+        };
+        if (clientSearchOpen) document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [clientSearchOpen]);
 
     const sensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { delay: 300, tolerance: 5 } }),
@@ -1990,6 +2177,20 @@ const Dashboard: React.FC<{
 
     const selectedClient = state.clients.find(c => c.id === selectedClientId);
     const clientCategories = selectedClient?.categories || [];
+
+    const lastCompletedEntry = useMemo(() => {
+        const completed = state.entries.filter(e => e.endTime && e.clientId === selectedClientId);
+        completed.sort((a, b) => b.startTime - a.startTime);
+        return completed[0] || null;
+    }, [state.entries, selectedClientId]);
+
+    const handleRepeatLast = () => {
+        if (!lastCompletedEntry) return;
+        setDescription(lastCompletedEntry.description || '');
+        setCategory(lastCompletedEntry.category || '');
+        if (lastCompletedEntry.projectId) setSelectedProjectId(lastCompletedEntry.projectId);
+        setRateType(lastCompletedEntry.rateType || 'hourly');
+    };
 
     const handleStart = () => {
         if (!selectedClientId) return;
@@ -2071,7 +2272,7 @@ const Dashboard: React.FC<{
                                 <div className="text-lg font-bold text-slate-300">{activeClient?.name || 'Unknown Client'}</div>
                                 <div className="text-sm text-slate-400 mt-1">{activeEntry.description || '(内容未設定)'}</div>
                             </div>
-                            <Button onClick={onStopTimer} className="w-full h-16 rounded-2xl bg-white text-slate-900 hover:bg-slate-100 font-black text-lg border-none shadow-xl shadow-black/20">
+                            <Button onClick={onStopTimer} className="w-full h-16 rounded-2xl bg-white !text-slate-900 hover:bg-slate-100 font-black text-lg border-none shadow-xl shadow-black/20">
                                 <Square fill="currentColor" size={20} /> 作業を終了する
                             </Button>
                         </div>
@@ -2082,20 +2283,64 @@ const Dashboard: React.FC<{
                                 {state.clients.length === 0 ? (
                                     <div className="text-xs text-slate-500 font-bold py-2">クライアントを追加してください</div>
                                 ) : (
-                                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                                        <SortableContext items={state.clients.map(c => c.id)} strategy={horizontalListSortingStrategy}>
-                                            <div className="flex items-center gap-2 flex-wrap pb-1">
-                                                {state.clients.map(c => (
-                                                    <SortableClientChip
-                                                        key={c.id}
-                                                        client={c}
-                                                        isSelected={selectedClientId === c.id}
-                                                        onSelect={setSelectedClientId}
-                                                    />
-                                                ))}
+                                    <div className="relative" ref={clientSearchRef}>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={() => { setClientSearchOpen(!clientSearchOpen); setClientSearchQuery(''); }}
+                                                className="shrink-0 w-10 h-10 rounded-xl bg-slate-800/50 border border-slate-700 flex items-center justify-center text-slate-400 hover:bg-slate-700/50 transition-all"
+                                            >
+                                                <Search size={14} />
+                                            </button>
+                                            <div className="flex-1 overflow-x-auto scrollbar-hide">
+                                                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                                                    <SortableContext items={state.clients.map(c => c.id)} strategy={horizontalListSortingStrategy}>
+                                                        <div className="flex items-center gap-2 flex-nowrap pb-1" style={{ minWidth: 'max-content' }}>
+                                                            {state.clients.map(c => (
+                                                                <SortableClientChip
+                                                                    key={c.id}
+                                                                    client={c}
+                                                                    isSelected={selectedClientId === c.id}
+                                                                    onSelect={setSelectedClientId}
+                                                                />
+                                                            ))}
+                                                        </div>
+                                                    </SortableContext>
+                                                </DndContext>
                                             </div>
-                                        </SortableContext>
-                                    </DndContext>
+                                        </div>
+                                        {clientSearchOpen && (
+                                            <div className="absolute top-full left-0 right-0 mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl z-20 overflow-hidden">
+                                                <div className="p-2">
+                                                    <input
+                                                        type="text"
+                                                        autoFocus
+                                                        value={clientSearchQuery}
+                                                        onChange={e => setClientSearchQuery(e.target.value)}
+                                                        placeholder="クライアントを検索..."
+                                                        className="w-full bg-slate-700/50 text-white rounded-lg px-3 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-slate-500 placeholder-slate-500"
+                                                    />
+                                                </div>
+                                                <div className="max-h-48 overflow-y-auto">
+                                                    {state.clients
+                                                        .filter(c => !clientSearchQuery || c.name.toLowerCase().includes(clientSearchQuery.toLowerCase()))
+                                                        .map(c => (
+                                                            <button
+                                                                key={c.id}
+                                                                onClick={() => { setSelectedClientId(c.id); setClientSearchOpen(false); setClientSearchQuery(''); }}
+                                                                className={`w-full text-left px-3 py-2.5 text-xs font-bold flex items-center gap-2 transition-all ${selectedClientId === c.id ? 'bg-slate-700 text-white' : 'text-slate-300 hover:bg-slate-700/50'}`}
+                                                            >
+                                                                <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }}></div>
+                                                                {c.name}
+                                                            </button>
+                                                        ))
+                                                    }
+                                                    {state.clients.filter(c => !clientSearchQuery || c.name.toLowerCase().includes(clientSearchQuery.toLowerCase())).length === 0 && (
+                                                        <div className="px-3 py-2.5 text-xs text-slate-500">一致するクライアントがありません</div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                 )}
                              </div>
                              {/* Project selection */}
@@ -2123,7 +2368,18 @@ const Dashboard: React.FC<{
                              )}
                              <div className="mb-4 px-1">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">TASK</label>
-                                <input type="text" value={description} onChange={e => { setDescription(e.target.value); setSelectedPresets([]); }} placeholder="作業内容を入力..." className="w-full bg-slate-800/50 text-white rounded-xl px-4 py-4 font-bold outline-none focus:ring-2 focus:ring-slate-600 transition-all placeholder-slate-600" />
+                                <input type="text" list="task-presets-list" value={description} onChange={e => { setDescription(e.target.value); setSelectedPresets([]); }} placeholder="作業内容を入力..." className="w-full bg-slate-800/50 text-white rounded-xl px-4 py-4 font-bold outline-none focus:ring-2 focus:ring-slate-600 transition-all placeholder-slate-600" />
+                                {selectedClient && selectedClient.taskPresets.length > 0 && (
+                                    <datalist id="task-presets-list">
+                                        {selectedClient.taskPresets.map((p, i) => <option key={i} value={p} />)}
+                                    </datalist>
+                                )}
+                                {lastCompletedEntry && !description && (
+                                    <button onClick={handleRepeatLast} className="mt-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/50 border border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700/50 text-[10px] font-bold transition-all">
+                                        <RotateCcw size={10} />
+                                        前回: {lastCompletedEntry.description?.substring(0, 20) || '(無題)'}{(lastCompletedEntry.description?.length || 0) > 20 ? '...' : ''}
+                                    </button>
+                                )}
                              </div>
                              {/* Category chip selection */}
                              {clientCategories.length > 0 && (
@@ -2205,6 +2461,7 @@ const ProjectsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = 
     const [filterClientId, setFilterClientId] = useState('all');
     const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'completed'>('all');
     const [searchText, setSearchText] = useState('');
+    const [showMonthlyFeeMode, setShowMonthlyFeeMode] = useState(false);
 
     // 月次固定報酬管理
     const currentYearMonth = useMemo(() => {
@@ -2266,6 +2523,12 @@ const ProjectsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = 
         }
         return result;
     }, [allProjects, filterClientId]);
+
+    const monthlyFeeTotal = useMemo(() => {
+        return state.monthlyFixedFees
+            .filter(f => f.yearMonth === selectedYearMonth)
+            .reduce((sum, f) => sum + f.amount, 0);
+    }, [state.monthlyFixedFees, selectedYearMonth]);
 
     const getMonthlyFee = (projectId: string, yearMonth: string) => {
         return state.monthlyFixedFees.find(f => f.projectId === projectId && f.yearMonth === yearMonth);
@@ -2340,7 +2603,7 @@ const ProjectsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = 
                         </button>
                     ))}
                 </div>
-                {/* Status filter + search */}
+                {/* Status filter + search + year-month */}
                 <div className="flex items-center gap-2 flex-wrap">
                     <div className="flex gap-1 bg-white rounded-lg border border-slate-200 p-0.5 shrink-0">
                         {(['all', 'active', 'completed'] as const).map(s => (
@@ -2393,7 +2656,12 @@ const ProjectsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = 
                                 {filteredProjects.map(project => (
                                     <tr key={project.id} className={`border-b border-slate-50 hover:bg-slate-50/50 transition-colors cursor-pointer ${!project.isActive ? 'opacity-50' : ''}`} onClick={() => { setEditingProject(project); setIsFormOpen(true); }}>
                                         <td className="px-4 py-3">
-                                            <div className="text-sm font-bold text-slate-800">{project.name}</div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-sm font-bold text-slate-800">{project.name}</span>
+                                                {project.fixedFee > 0 && getMonthlyFee(project.id, selectedYearMonth) && (
+                                                    <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full">今月ON</span>
+                                                )}
+                                            </div>
                                         </td>
                                         <td className="px-4 py-3">
                                             <div className="flex items-center gap-2">
@@ -2429,7 +2697,12 @@ const ProjectsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = 
                         <Card key={project.id} onClick={() => { setEditingProject(project); setIsFormOpen(true); }} className={`!p-4 cursor-pointer active:bg-slate-50 ${!project.isActive ? 'opacity-50' : ''}`}>
                             <div className="flex justify-between items-start">
                                 <div className="flex-1 min-w-0">
-                                    <div className="text-sm font-bold text-slate-800 truncate">{project.name}</div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-sm font-bold text-slate-800 truncate">{project.name}</span>
+                                        {project.fixedFee > 0 && getMonthlyFee(project.id, selectedYearMonth) && (
+                                            <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full shrink-0">今月ON</span>
+                                        )}
+                                    </div>
                                     <div className="flex items-center gap-1.5 mt-1">
                                         <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: project.clientColor }}></div>
                                         <span className="text-xs text-slate-500">{project.clientName}</span>
@@ -2449,61 +2722,6 @@ const ProjectsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = 
                     ))}
                 </div>
                 </>
-            )}
-
-            {/* 月次報酬管理セクション */}
-            {activeProjectsForFee.length > 0 && (
-                <div className="mt-8">
-                    <div className="flex justify-between items-center mb-4 px-1">
-                        <h3 className="text-lg font-black text-slate-800">月次報酬管理</h3>
-                        <select
-                            value={selectedYearMonth}
-                            onChange={e => setSelectedYearMonth(e.target.value)}
-                            className="text-sm font-bold bg-slate-100 rounded-lg px-3 py-2 outline-none"
-                        >
-                            {getYearMonthOptions().map(opt => (
-                                <option key={opt.value} value={opt.value}>{opt.label}</option>
-                            ))}
-                        </select>
-                    </div>
-                    <Card className="!p-3">
-                        <div className="space-y-1">
-                            {activeProjectsForFee.map(project => {
-                                const fee = getMonthlyFee(project.id, selectedYearMonth);
-                                const isEnabled = !!fee;
-                                return (
-                                    <div key={project.id} className="flex items-center justify-between py-2 px-2 bg-slate-50 rounded-lg">
-                                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                                            <div className="w-6 h-6 rounded flex items-center justify-center text-white text-xs font-bold shrink-0" style={{ backgroundColor: project.clientColor }}>
-                                                {project.clientName.charAt(0)}
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <span className="text-xs font-bold text-slate-700 truncate block">{project.name}</span>
-                                                <span className="text-[10px] text-slate-400">{project.clientName}</span>
-                                            </div>
-                                            <span className="text-[10px] text-slate-400 shrink-0">¥{project.fixedFee.toLocaleString()}</span>
-                                        </div>
-                                        <button
-                                            onClick={() => toggleMonthlyFee(project)}
-                                            className={`w-10 h-5 rounded-full transition-colors relative ml-3 shrink-0 ${isEnabled ? 'theme-bg' : 'bg-slate-200'}`}
-                                        >
-                                            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${isEnabled ? 'left-5' : 'left-0.5'}`}></div>
-                                        </button>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                        <div className="mt-3 pt-3 border-t border-slate-100 flex justify-between items-center">
-                            <span className="text-xs font-bold text-slate-500">合計</span>
-                            <span className="text-sm font-black text-slate-800">
-                                ¥{state.monthlyFixedFees
-                                    .filter(f => f.yearMonth === selectedYearMonth)
-                                    .reduce((sum, f) => sum + f.amount, 0)
-                                    .toLocaleString()}
-                            </span>
-                        </div>
-                    </Card>
-                </div>
             )}
 
             {isFormOpen && (
@@ -2677,6 +2895,10 @@ const ClientsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = (
                             <div>
                                 <label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">基本時給 (¥)</label>
                                 <Input type="number" value={hourlyRate} onChange={e => setHourlyRate(e.target.value)} placeholder="0" className="!h-12 font-bold" />
+                                <Link to="/projects" onClick={() => { setIsFormOpen(false); }} className="flex items-center gap-1 mt-2 text-[10px] font-bold text-slate-400 hover:text-slate-600 transition-colors">
+                                    <Briefcase size={10} />
+                                    固定報酬の場合は案件管理から登録 →
+                                </Link>
                             </div>
                             <div>
                                 <label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">締日設定</label>
@@ -3376,7 +3598,7 @@ const AppLayout: React.FC = () => {
              <div className="bg-white w-full max-w-lg rounded-2xl p-8 shadow-2xl animate-in zoom-in-95 duration-300 max-h-[85vh] overflow-y-auto mx-4">
                 <div className="flex justify-between items-center mb-8"><h3 className="text-2xl font-black text-slate-800 tracking-tight">設定</h3><button onClick={() => setIsSettingsOpen(false)} className="p-2 bg-slate-50 rounded-full text-slate-400 active:scale-90 transition-all"><X size={24} fill="none" strokeWidth={2.5} /></button></div>
                 <div className="mb-4"><label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">ユーザー設定</label><div className="p-4 bg-slate-50 rounded-2xl border border-slate-100"><label className="text-[8px] font-bold text-slate-400 mb-1 block">表示名 (報告書の発行者名)</label><Input value={state.settings.userName === 'Freelancer' ? (user?.user_metadata?.full_name || user?.user_metadata?.name || state.settings.userName) : state.settings.userName} onChange={e => dispatch({ type: 'UPDATE_GOALS', payload: { userName: e.target.value } })} className="!bg-white !p-2 !border-none !text-sm font-bold" /></div></div>
-                <div className="mb-8"><label className="text-[10px] font-black text-slate-400 block mb-4 uppercase tracking-widest">目標設定</label><div className="grid grid-cols-2 gap-4"><div className="p-4 bg-slate-50 rounded-2xl border border-slate-100"><label className="text-[8px] font-bold text-slate-400 mb-1 block">月間売上目標</label><Input type="number" value={state.settings.monthlyGoalRevenue} onChange={e => dispatch({ type: 'UPDATE_GOALS', payload: { monthlyGoalRevenue: Number(e.target.value) } })} className="!bg-white !p-0 !border-none !text-lg !font-black" /></div><div className="p-4 bg-slate-50 rounded-2xl border border-slate-100"><label className="text-[8px] font-bold text-slate-400 mb-1 block">月間稼働目標(h)</label><Input type="number" value={state.settings.monthlyGoalHours} onChange={e => dispatch({ type: 'UPDATE_GOALS', payload: { monthlyGoalHours: Number(e.target.value) } })} className="!bg-white !p-0 !border-none !text-lg !font-black" /></div></div></div>
+                <div className="mb-8"><label className="text-[10px] font-black text-slate-400 block mb-4 uppercase tracking-widest">目標設定</label><div className="grid grid-cols-2 gap-4"><div className="p-4 bg-slate-50 rounded-2xl border border-slate-100"><label className="text-[8px] font-bold text-slate-400 mb-1 block">月間売上目標</label><div className="flex items-center gap-1"><span className="text-lg font-black text-slate-400">¥</span><Input type="number" value={state.settings.monthlyGoalRevenue} onChange={e => dispatch({ type: 'UPDATE_GOALS', payload: { monthlyGoalRevenue: Number(e.target.value) } })} className="!bg-white !p-0 !border-none !text-lg !font-black flex-1" /></div><div className="text-[8px] text-slate-400 mt-1">ダッシュボードに達成率を表示</div></div><div className="p-4 bg-slate-50 rounded-2xl border border-slate-100"><label className="text-[8px] font-bold text-slate-400 mb-1 block">月間稼働目標</label><div className="flex items-center gap-1"><Input type="number" value={state.settings.monthlyGoalHours} onChange={e => dispatch({ type: 'UPDATE_GOALS', payload: { monthlyGoalHours: Number(e.target.value) } })} className="!bg-white !p-0 !border-none !text-lg !font-black flex-1" /><span className="text-lg font-black text-slate-400">h</span></div><div className="text-[8px] text-slate-400 mt-1">ダッシュボードに達成率を表示</div></div></div></div>
                 <div className="mb-8"><label className="text-[10px] font-black text-slate-400 block mb-4 uppercase tracking-widest">通知設定</label><div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-slate-400 shadow-sm"><BellRing size={20}/></div><div><div className="text-xs font-black text-slate-800">ブラウザ通知</div><div className="text-[9px] text-slate-400 font-bold">長時間稼働時にアラートを表示</div></div></div><button onClick={() => { if (!state.settings.enableNotifications) { Notification.requestPermission(); } dispatch({ type: 'UPDATE_GOALS', payload: { enableNotifications: !state.settings.enableNotifications } }) }} className={`w-12 h-7 rounded-full transition-colors relative ${state.settings.enableNotifications ? 'theme-bg' : 'bg-slate-200'}`}><div className={`absolute top-1 w-5 h-5 rounded-full bg-white transition-all shadow-sm ${state.settings.enableNotifications ? 'left-6' : 'left-1'}`}></div></button></div></div>
                 <div className="mb-8"><label className="text-[10px] font-black text-slate-400 block mb-4 uppercase tracking-widest">テーマ & スタイル</label><div className="flex flex-wrap gap-4">{themeColors.map(color => (<button key={color.value} onClick={() => dispatch({ type: 'UPDATE_THEME', payload: color.value })} className={`w-12 h-12 rounded-2xl border-[3px] transition-all relative group overflow-hidden ${state.settings.themeColor === color.value ? 'border-slate-800 scale-110 shadow-lg' : 'border-transparent opacity-80'}`} style={{ background: color.value }}>{state.settings.themeColor === color.value && <div className="absolute inset-0 flex items-center justify-center text-slate-800 mix-blend-overlay"><Check size={20} strokeWidth={4} /></div>}</button>))}</div></div>
                 <div className="mb-8">
