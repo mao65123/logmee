@@ -425,9 +425,9 @@ const EditEntryDrawer: React.FC<{
 const UsagePage: React.FC = () => {
     return (
         <div className="space-y-6 animate-fade-in pb-20">
-             <div className="mb-4 ml-1">
-                 <h2 className="text-xl font-black text-slate-800">使い方ガイド</h2>
-                 <p className="text-xs text-slate-500 font-bold mt-1">はじめての方はこの流れで進めましょう</p>
+            <div className="mb-4 ml-1">
+                <h2 className="text-xl font-black text-slate-800">使い方ガイド</h2>
+                <p className="text-xs text-slate-500 font-bold mt-1">はじめての方はこの流れで進めましょう</p>
             </div>
 
             <div className="space-y-6">
@@ -443,7 +443,8 @@ const UsagePage: React.FC = () => {
                             <div>
                                 <p className="text-xs text-slate-600 mb-2">下メニューの<span className="font-bold text-slate-800">「管理」</span>から登録します。</p>
                                 <ul className="list-disc pl-4 space-y-0.5 text-xs text-slate-500">
-                                    <li><span className="font-bold text-slate-700">時給</span>を設定 → 売上を自動計算</li>
+                                    <li><span className="font-bold text-slate-700">時給制</span> → 稼働時間 × 時給で売上を自動計算</li>
+                                    <li><span className="font-bold text-slate-700">月給制</span> → 月給額がそのまま毎月の売上目標達成率に加算</li>
                                     <li><span className="font-bold text-slate-700">締日</span>を設定 → 報告書の期間指定が楽に</li>
                                     <li><span className="font-bold text-slate-700">カテゴリ</span>を追加 → 作業を分類できる</li>
                                 </ul>
@@ -465,8 +466,8 @@ const UsagePage: React.FC = () => {
                                 <p className="text-xs text-slate-600 mb-2"><span className="font-bold text-slate-800">「管理」→「案件」</span>タブから登録します。</p>
                                 <ul className="list-disc pl-4 space-y-0.5 text-xs text-slate-500">
                                     <li>クライアントに紐づけて案件を作成</li>
-                                    <li><span className="font-bold text-slate-700">固定報酬</span>を設定 → 月次で売上管理</li>
-                                    <li>案件選択時は自動で「固定」報酬に切替</li>
+                                    <li><span className="font-bold text-slate-700">固定報酬</span>を設定 → 月次でON/OFFして売上管理</li>
+                                    <li>案件選択時は自動で「固定」報酬タイプに切替</li>
                                 </ul>
                             </div>
                         </div>
@@ -484,14 +485,11 @@ const UsagePage: React.FC = () => {
                             <div className="mt-0.5 text-slate-400 shrink-0"><Clock size={20} /></div>
                             <div>
                                 <p className="text-xs text-slate-600 mb-2"><span className="font-bold text-slate-800">「タイマー」</span>画面で作業を記録します。</p>
-                                <div className="space-y-1.5">
-                                    <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg">
-                                        <div className="text-xs text-slate-600">クライアント → 案件 → 内容を選んで<span className="font-bold">「作業を開始」</span></div>
-                                    </div>
-                                    <div className="text-xs text-slate-400">
-                                        長押しでクライアントの並び順を変更できます。よく使う作業内容は自動でプリセット保存されます。
-                                    </div>
-                                </div>
+                                <ul className="list-disc pl-4 space-y-0.5 text-xs text-slate-500">
+                                    <li>クライアント → 案件（任意）→ 内容を選んで<span className="font-bold text-slate-700">「作業を開始」</span></li>
+                                    <li>過去の作業内容はチップで一覧表示。タップで入力、×で削除</li>
+                                    <li>長押しでクライアントの並び順を変更できます</li>
+                                </ul>
                             </div>
                         </div>
                     </Card>
@@ -510,7 +508,7 @@ const UsagePage: React.FC = () => {
                                 <p className="text-xs text-slate-600 mb-2"><span className="font-bold text-slate-800">「管理」→「案件」</span>タブ下部で月ごとにON/OFFします。</p>
                                 <ul className="list-disc pl-4 space-y-0.5 text-xs text-slate-500">
                                     <li>トグルONでその月の売上に固定報酬を加算</li>
-                                    <li>月額契約や単発案件にも対応</li>
+                                    <li>月給制クライアントは毎月自動で達成率に反映</li>
                                 </ul>
                             </div>
                         </div>
@@ -561,43 +559,43 @@ const UsagePage: React.FC = () => {
 
                 {/* Tips */}
                 <section>
-                     <div className="flex items-center gap-2 mb-3 mt-4">
+                    <div className="flex items-center gap-2 mb-3 mt-4">
                         <Lightbulb size={18} className="text-yellow-500 fill-current" />
                         <h3 className="font-bold text-slate-700 text-sm">知っておくと便利</h3>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                         <Card className="!p-4 bg-slate-50">
-                             <div className="font-bold text-xs mb-1 flex items-center gap-2 text-slate-700"><PictureInPicture2 size={14} /> フローティングタイマー</div>
-                             <div className="text-[11px] text-slate-500 leading-relaxed">
-                                 計測中は画面下部にバーが出現。PCではPiP小窓、スマホでは通知で経過時間を確認できます。
-                             </div>
-                         </Card>
-                         <Card className="!p-4 bg-slate-50">
-                             <div className="font-bold text-xs mb-1 flex items-center gap-2 text-slate-700"><Flame size={14} className="text-orange-400" /> タスクプリセット</div>
-                             <div className="text-[11px] text-slate-500 leading-relaxed">
-                                 入力した作業内容は自動保存。次回からワンタップで入力できます。
-                             </div>
-                         </Card>
-                         <Card className="!p-4 bg-slate-50">
-                             <div className="font-bold text-xs mb-1 flex items-center gap-2 text-slate-700"><BarChart2 size={14} /> データ分析</div>
-                             <div className="text-[11px] text-slate-500 leading-relaxed">
-                                 クライアント別の稼働時間・売上をグラフで確認できます。
-                             </div>
-                         </Card>
-                         <Card className="!p-4 bg-slate-50">
-                             <div className="font-bold text-xs mb-1 flex items-center gap-2 text-slate-700"><Cloud size={14} /> データ同期</div>
-                             <div className="text-[11px] text-slate-500 leading-relaxed">
-                                 Googleログインでデータをクラウド保存。別端末でもアクセスできます。
-                             </div>
-                         </Card>
+                        <Card className="!p-4 bg-slate-50">
+                            <div className="font-bold text-xs mb-1 flex items-center gap-2 text-slate-700"><PictureInPicture2 size={14} /> ピクチャーインピクチャー（PiP）</div>
+                            <div className="text-[11px] text-slate-500 leading-relaxed">
+                                計測中にフローティングバーの小窓ボタンを押すとPiP表示に。計測中は会社名・タイマーのみ表示。停止すると別クライアントへの切り替えや業務内容の入力もPiP上で可能です。
+                            </div>
+                        </Card>
+                        <Card className="!p-4 bg-slate-50">
+                            <div className="font-bold text-xs mb-1 flex items-center gap-2 text-slate-700"><Flame size={14} className="text-orange-400" /> 作業内容の履歴</div>
+                            <div className="text-[11px] text-slate-500 leading-relaxed">
+                                入力した作業内容は自動保存され、チップとして一覧表示されます。タップで再利用、×ボタンで不要なものを削除できます。PiPの入力欄でも候補として表示されます。
+                            </div>
+                        </Card>
+                        <Card className="!p-4 bg-slate-50">
+                            <div className="font-bold text-xs mb-1 flex items-center gap-2 text-slate-700"><BarChart2 size={14} /> データ分析</div>
+                            <div className="text-[11px] text-slate-500 leading-relaxed">
+                                クライアント別の稼働時間・売上をグラフで確認できます。月次目標に対する達成率もダッシュボードに表示されます。
+                            </div>
+                        </Card>
+                        <Card className="!p-4 bg-slate-50">
+                            <div className="font-bold text-xs mb-1 flex items-center gap-2 text-slate-700"><Cloud size={14} /> クラウド同期 &amp; PWA</div>
+                            <div className="text-[11px] text-slate-500 leading-relaxed">
+                                Googleログインでデータをクラウド保存。別端末でも同じデータにアクセスできます。ホーム画面に追加するとアプリとして起動できます。
+                            </div>
+                        </Card>
                     </div>
                 </section>
             </div>
 
             <div className="mt-8 text-center">
-                 <Link to="/" className="inline-flex items-center gap-2 px-6 py-3 rounded-full theme-bg contrast-text font-black text-sm shadow-md hover:shadow-lg transition-all active:scale-95">
-                     さっそく使い始める <ArrowRight size={16} />
-                 </Link>
+                <Link to="/" className="inline-flex items-center gap-2 px-6 py-3 rounded-full theme-bg contrast-text font-black text-sm shadow-md hover:shadow-lg transition-all active:scale-95">
+                    さっそく使い始める <ArrowRight size={16} />
+                </Link>
             </div>
         </div>
     );
