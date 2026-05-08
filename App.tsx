@@ -2941,10 +2941,6 @@ const ClientsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = (
                                         <p className="text-[10px] text-slate-400 mt-1.5 font-bold">月給は毎月の売上目標に自動加算されます</p>
                                     </>
                                 )}
-                                <Link to="/projects" onClick={() => { setIsFormOpen(false); }} className="flex items-center gap-1 mt-2 text-[10px] font-bold text-slate-400 hover:text-slate-600 transition-colors">
-                                    <Briefcase size={10} />
-                                    固定報酬の場合は案件管理から登録 →
-                                </Link>
                             </div>
                             <div>
                                 <label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">締日設定</label>
@@ -3285,7 +3281,7 @@ const AppLayout: React.FC = () => {
         .indicator.stopped { background: #64748b; box-shadow: none; }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
         .client {
-          font-size: 13px; font-weight: bold;
+          font-size: 13px; font-weight: bold; color: #38bdf8;
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
           flex: 1; min-width: 0;
         }
