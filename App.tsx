@@ -3348,11 +3348,13 @@ const AppLayout: React.FC = () => {
           <div class="indicator ${isRunning ? 'running' : 'stopped'}" id="pip-indicator"></div>
           <div class="client${isRunning ? '' : ' stopped'}" id="pip-client">${clients[previewIndex]?.name || '作業中'}</div>
           <div class="time" id="pip-time">${isRunning ? formatTimeShort(floatingElapsed) : '--:--'}</div>
-          <div class="sep">|</div>
-          <button class="nav-btn" id="pip-prev">&#8249;</button>
-          <span class="switch-name" id="pip-preview-name"></span>
-          <button class="nav-btn" id="pip-next">&#8250;</button>
-          <button class="go-btn" id="pip-switch">開始</button>
+          <div class="switch-row" id="pip-switch-row" style="display:${isRunning ? 'none' : 'contents'}">
+            <div class="sep">|</div>
+            <button class="nav-btn" id="pip-prev">&#8249;</button>
+            <span class="switch-name" id="pip-preview-name"></span>
+            <button class="nav-btn" id="pip-next">&#8250;</button>
+            <button class="go-btn" id="pip-switch">開始</button>
+          </div>
           <div class="sep">|</div>
           <button class="stop-btn" id="pip-stop"><div class="stop-icon"></div>停止</button>
         </div>
@@ -3384,7 +3386,9 @@ const AppLayout: React.FC = () => {
         if (stopBtn) stopBtn.disabled = !isRunning;
         if (indicator) indicator.className = 'indicator ' + (isRunning ? 'running' : 'stopped');
         if (clientEl) clientEl.className = 'client' + (isRunning ? '' : ' stopped');
-        // 計測中は入力欄を隠す、停止中は表示
+        // 計測中は切り替えUIと入力欄を隠す
+        const switchRow = doc.getElementById('pip-switch-row') as HTMLElement | null;
+        if (switchRow) switchRow.style.display = isRunning ? 'none' : 'contents';
         if (descRow) descRow.style.display = isRunning ? 'none' : 'flex';
         // プレビュークライアントのプリセット一覧を更新
         const existingDatalist = doc.getElementById('pip-presets-list');
