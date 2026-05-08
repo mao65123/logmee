@@ -173,7 +173,7 @@ const DraggableTimer: React.FC<{
         };
     }, [isDragging]);
 
-    if (isPiPActive) return null;
+    // PiP表示中もフローティングバーを表示する（isPiPActiveでも消さない）
 
     return (
         <div
@@ -207,8 +207,8 @@ const DraggableTimer: React.FC<{
                     onMouseDown={(e) => e.stopPropagation()}
                     onTouchStart={(e) => e.stopPropagation()}
                     onClick={onTogglePiP}
-                    className="h-10 w-10 bg-[#1e293b] hover:bg-black text-white rounded-full text-xs font-bold flex items-center justify-center active:scale-95 transition-all border border-slate-600"
-                    title="ピクチャーインピクチャーで表示"
+                    className={`h-10 w-10 text-white rounded-full text-xs font-bold flex items-center justify-center active:scale-95 transition-all border ${isPiPActive ? 'bg-blue-600 hover:bg-blue-700 border-blue-500' : 'bg-[#1e293b] hover:bg-black border-slate-600'}`}
+                    title={isPiPActive ? 'PiPを前面に表示' : 'ピクチャーインピクチャーで表示'}
                 >
                    <PictureInPicture2 size={16} />
                 </button>
@@ -2094,12 +2094,13 @@ const SortableClientChip: React.FC<{
 
 const Dashboard: React.FC<{
   state: AppState;
+  user: any;
   onStartTimer: (clientId: string, description: string, rateType?: 'hourly' | 'fixed', projectId?: string, category?: string) => void;
   onStopTimer: () => void;
   onUpdateDescription: (id: string, description: string) => void;
   onDeletePreset: (clientId: string, presetName: string) => void;
   onReorderClients: (clients: Client[]) => void;
-}> = ({ state, onStartTimer, onStopTimer, onUpdateDescription, onDeletePreset, onReorderClients }) => {
+}> = ({ state, user, onStartTimer, onStopTimer, onUpdateDescription, onDeletePreset, onReorderClients }) => {
     const activeEntry = state.activeEntryId ? state.entries.find(e => e.id === state.activeEntryId) : null;
     const activeClient = activeEntry ? state.clients.find(c => c.id === activeEntry.clientId) : null;
     const [elapsed, setElapsed] = useState(0);
@@ -2159,20 +2160,43 @@ const Dashboard: React.FC<{
     useEffect(() => {
         const client = state.clients.find(c => c.id === selectedClientId);
         if (client) {
-            if (!!client.defaultHourlyRate) {
-                setRateType('hourly');
+            const activeProjects = client.projects.filter(p => p.isActive);
+            if (activeProjects.length > 0) {
+                // アクティブ案件があれば最初の案件を自動選択
+                setSelectedProjectId(activeProjects[0].id);
+                // 固定報酬が設定されていれば固定を選択
+                if (activeProjects[0].fixedFee > 0) {
+                    setRateType('fixed');
+                } else if (client.defaultHourlyRate) {
+                    setRateType('hourly');
+                }
+            } else {
+                setSelectedProjectId('');
+                if (client.defaultHourlyRate) {
+                    setRateType('hourly');
+                }
+            }
+            // カテゴリがあれば最初のカテゴリを自動選択
+            if (client.categories && client.categories.length > 0) {
+                setCategory(client.categories[0]);
+            } else {
+                setCategory('');
             }
         }
         setSelectedPresets([]);
         setDescription('');
-        setSelectedProjectId('');
-        setCategory('');
     }, [selectedClientId, state.clients]);
 
-    // 案件選択時は固定報酬に自動設定
+    // 案件選択時に固定報酬が設定されていれば固定を選択
     useEffect(() => {
         if (!selectedProjectId) return;
-        setRateType('fixed');
+        const client = state.clients.find(c => c.id === selectedClientId);
+        const project = client?.projects.find(p => p.id === selectedProjectId);
+        if (project && project.fixedFee > 0) {
+            setRateType('fixed');
+        } else if (client?.defaultHourlyRate) {
+            setRateType('hourly');
+        }
     }, [selectedProjectId]);
 
     const selectedClient = state.clients.find(c => c.id === selectedClientId);
@@ -2229,11 +2253,32 @@ const Dashboard: React.FC<{
             }
         });
 
-        // 月次固定報酬を加算
+        // 月次固定報酬を加算（手動ON分）
         const monthlyFixedTotal = state.monthlyFixedFees
             .filter(f => f.yearMonth === currentYearMonth)
             .reduce((sum, f) => sum + f.amount, 0);
         revenue += monthlyFixedTotal;
+
+        // アクティブ案件の固定報酬を加算（monthlyFixedFeesに未登録のもの）
+        const registeredProjectIds = new Set(
+            state.monthlyFixedFees
+                .filter(f => f.yearMonth === currentYearMonth)
+                .map(f => f.projectId)
+        );
+        state.clients.forEach(client => {
+            client.projects.forEach(project => {
+                if (project.isActive && project.fixedFee > 0 && !registeredProjectIds.has(project.id)) {
+                    revenue += project.fixedFee;
+                }
+            });
+        });
+
+        // 月給クライアントの月給を加算
+        state.clients.forEach(client => {
+            if (client.monthlyRate && client.monthlyRate > 0) {
+                revenue += client.monthlyRate;
+            }
+        });
 
         return { hours, revenue };
     }, [state.entries, state.clients, state.monthlyFixedFees, elapsed]);
@@ -2242,7 +2287,7 @@ const Dashboard: React.FC<{
         <div className="space-y-6 animate-fade-in pb-20">
             <div className="flex justify-between items-end mb-2 px-1">
                 <div>
-                    <h2 className="text-2xl font-black text-slate-800 tracking-tight">こんにちは、{state.settings.userName}さん</h2>
+                    <h2 className="text-2xl font-black text-slate-800 tracking-tight">こんにちは、{(state.settings.userName && state.settings.userName !== 'Freelancer') ? state.settings.userName : (user?.user_metadata?.full_name || user?.user_metadata?.name || state.settings.userName)}さん</h2>
                     <p className="text-xs font-bold text-slate-400">今日の稼働: {(todayTotal / 3600000).toFixed(2)}時間</p>
                 </div>
                 {state.settings.monthlyGoalRevenue > 0 && (
@@ -2348,12 +2393,6 @@ const Dashboard: React.FC<{
                                <div className="mb-4 px-1">
                                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">PROJECT</label>
                                  <div className="flex items-center gap-2 flex-wrap pb-1">
-                                   <button
-                                     onClick={() => setSelectedProjectId('')}
-                                     className={`shrink-0 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${!selectedProjectId ? 'bg-slate-700 text-white border-transparent' : 'bg-slate-800/50 text-slate-400 border-slate-700 hover:bg-slate-700/50'}`}
-                                   >
-                                     全般
-                                   </button>
                                    {selectedClient.projects.filter(p => p.isActive).map(p => (
                                      <button
                                        key={p.id}
@@ -2368,12 +2407,7 @@ const Dashboard: React.FC<{
                              )}
                              <div className="mb-4 px-1">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">TASK</label>
-                                <input type="text" list="task-presets-list" value={description} onChange={e => { setDescription(e.target.value); setSelectedPresets([]); }} placeholder="作業内容を入力..." className="w-full bg-slate-800/50 text-white rounded-xl px-4 py-4 font-bold outline-none focus:ring-2 focus:ring-slate-600 transition-all placeholder-slate-600" />
-                                {selectedClient && selectedClient.taskPresets.length > 0 && (
-                                    <datalist id="task-presets-list">
-                                        {selectedClient.taskPresets.map((p, i) => <option key={i} value={p} />)}
-                                    </datalist>
-                                )}
+                                <input type="text" value={description} onChange={e => { setDescription(e.target.value); setSelectedPresets([]); }} placeholder="作業内容を入力..." className="w-full bg-slate-800/50 text-white rounded-xl px-4 py-4 font-bold outline-none focus:ring-2 focus:ring-slate-600 transition-all placeholder-slate-600" />
                                 {lastCompletedEntry && !description && (
                                     <button onClick={handleRepeatLast} className="mt-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/50 border border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700/50 text-[10px] font-bold transition-all">
                                         <RotateCcw size={10} />
@@ -2386,16 +2420,10 @@ const Dashboard: React.FC<{
                              <div className="mb-4 px-1">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">CATEGORY</label>
                                 <div className="flex items-center gap-2 flex-wrap pb-1">
-                                    <button
-                                        onClick={() => setCategory('')}
-                                        className={`shrink-0 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${!category ? 'bg-slate-700 text-white border-transparent' : 'bg-slate-800/50 text-slate-400 border-slate-700 hover:bg-slate-700/50'}`}
-                                    >
-                                        なし
-                                    </button>
                                     {clientCategories.map(cat => (
                                         <button
                                             key={cat}
-                                            onClick={() => setCategory(cat)}
+                                            onClick={() => setCategory(category === cat ? '' : cat)}
                                             className={`shrink-0 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${category === cat ? 'bg-slate-700 text-white border-transparent' : 'bg-slate-800/50 text-slate-400 border-slate-700 hover:bg-slate-700/50'}`}
                                         >
                                             {cat}
@@ -2767,7 +2795,9 @@ const ClientsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = (
     const [editingClient, setEditingClient] = useState<Client | null>(null);
     const [name, setName] = useState('');
     const [color, setColor] = useState(STYLISH_COLORS[0]);
+    const [rateMode, setRateMode] = useState<'hourly' | 'monthly'>('hourly');
     const [hourlyRate, setHourlyRate] = useState('');
+    const [monthlyRate, setMonthlyRate] = useState('');
     const [closingDate, setClosingDate] = useState('99');
 
     // Category management state
@@ -2777,12 +2807,16 @@ const ClientsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = (
         if (editingClient) {
             setName(editingClient.name);
             setColor(editingClient.color);
+            setRateMode(editingClient.monthlyRate ? 'monthly' : 'hourly');
             setHourlyRate(editingClient.defaultHourlyRate?.toString() || '');
+            setMonthlyRate(editingClient.monthlyRate?.toString() || '');
             setClosingDate(editingClient.closingDate?.toString() || '99');
         } else {
             setName('');
             setColor(getNextStylishColor(state.clients.map(c => c.color)));
+            setRateMode('hourly');
             setHourlyRate('');
+            setMonthlyRate('');
             setClosingDate('99');
         }
     }, [editingClient, isFormOpen, state.clients]);
@@ -2792,7 +2826,8 @@ const ClientsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = (
             id: editingClient ? editingClient.id : `c_${Date.now()}`,
             name,
             color,
-            defaultHourlyRate: Number(hourlyRate),
+            defaultHourlyRate: rateMode === 'hourly' ? Number(hourlyRate) : undefined,
+            monthlyRate: rateMode === 'monthly' ? Number(monthlyRate) : undefined,
             closingDate: Number(closingDate),
             taskPresets: editingClient ? editingClient.taskPresets : [],
             projects: editingClient ? editingClient.projects : [],
@@ -2893,8 +2928,19 @@ const ClientsPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> = (
                                 </div>
                             </div>
                             <div>
-                                <label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">基本時給 (¥)</label>
-                                <Input type="number" value={hourlyRate} onChange={e => setHourlyRate(e.target.value)} placeholder="0" className="!h-12 font-bold" />
+                                <label className="text-[10px] font-black text-slate-400 block mb-2 uppercase tracking-widest">報酬タイプ</label>
+                                <div className="flex gap-2 mb-3">
+                                    <button type="button" onClick={() => setRateMode('hourly')} className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${rateMode === 'hourly' ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-500'}`}>時給</button>
+                                    <button type="button" onClick={() => setRateMode('monthly')} className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${rateMode === 'monthly' ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-500'}`}>月給</button>
+                                </div>
+                                {rateMode === 'hourly' ? (
+                                    <Input type="number" value={hourlyRate} onChange={e => setHourlyRate(e.target.value)} placeholder="時給を入力 (¥)" className="!h-12 font-bold" />
+                                ) : (
+                                    <>
+                                        <Input type="number" value={monthlyRate} onChange={e => setMonthlyRate(e.target.value)} placeholder="月給を入力 (¥)" className="!h-12 font-bold" />
+                                        <p className="text-[10px] text-slate-400 mt-1.5 font-bold">月給は毎月の売上目標に自動加算されます</p>
+                                    </>
+                                )}
                                 <Link to="/projects" onClick={() => { setIsFormOpen(false); }} className="flex items-center gap-1 mt-2 text-[10px] font-bold text-slate-400 hover:text-slate-600 transition-colors">
                                     <Briefcase size={10} />
                                     固定報酬の場合は案件管理から登録 →
@@ -3059,7 +3105,9 @@ const ManagementPage: React.FC<{ state: AppState; dispatch: (a: any) => void }> 
 
 // --- Main Layout Component ---
 const AppLayout: React.FC = () => {
-  const { user, loading: authLoading, error: authError, signIn, signOut } = useAuth();
+  const auth = useAuth();
+  const user = auth.user;
+  const { loading: authLoading, error: authError, signIn, signOut } = auth;
   const [state, setState] = useState<AppState>(loadState);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [floatingElapsed, setFloatingElapsed] = useState(0);
@@ -3069,6 +3117,11 @@ const AppLayout: React.FC = () => {
   const pipWindowRef = useRef<Window | null>(null);
   const notificationRef = useRef<Notification | null>(null);
   const notificationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pipClientsRef = useRef<Client[]>([]);
+  const pipActiveEntryRef = useRef<TimeEntry | null>(null);
+  const pipChannelRef = useRef<BroadcastChannel | null>(null);
+  const pipSwitchingRef = useRef(false);
+  const pipKeepOpenRef = useRef(false);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -3113,22 +3166,28 @@ const AppLayout: React.FC = () => {
   const activeEntry = state.activeEntryId ? state.entries.find(e => e.id === state.activeEntryId) : null;
   const activeClientName = activeEntry ? state.clients.find(c => c.id === activeEntry.clientId)?.name || '' : '';
 
+  // PiPウィンドウからアクセスするためのrefを最新に保つ
+  pipClientsRef.current = state.clients;
+  pipActiveEntryRef.current = activeEntry ?? null;
+
   useEffect(() => {
     if (!activeEntry) {
       setFloatingElapsed(0);
-      if (pipWindowRef.current) {
-        pipWindowRef.current.close();
-        pipWindowRef.current = null;
-        setIsPiPActive(false);
-      }
-      // Clear notification on timer stop
-      if (notificationRef.current) {
-        notificationRef.current.close();
-        notificationRef.current = null;
-      }
-      if (notificationIntervalRef.current) {
-        clearInterval(notificationIntervalRef.current);
-        notificationIntervalRef.current = null;
+      // 切り替え中・停止後もPiPを開いたままにする
+      if (!pipSwitchingRef.current && !pipKeepOpenRef.current) {
+        if (pipWindowRef.current) {
+          pipWindowRef.current.close();
+          pipWindowRef.current = null;
+          setIsPiPActive(false);
+        }
+        if (notificationRef.current) {
+          notificationRef.current.close();
+          notificationRef.current = null;
+        }
+        if (notificationIntervalRef.current) {
+          clearInterval(notificationIntervalRef.current);
+          notificationIntervalRef.current = null;
+        }
       }
       return;
     }
@@ -3144,10 +3203,16 @@ const AppLayout: React.FC = () => {
     if (!isPiPActive || !pipWindowRef.current || !activeEntry) return;
 
     const updatePiPContent = () => {
-      if (!pipWindowRef.current) return;
-      const timeEl = pipWindowRef.current.document.getElementById('pip-time');
-      if (timeEl) {
-        timeEl.textContent = formatTimeShort(Date.now() - activeEntry.startTime);
+      const win = pipWindowRef.current;
+      if (!win) return;
+      const entry = pipActiveEntryRef.current;
+      if (!entry) return;
+      const timeEl = win.document.getElementById('pip-time');
+      if (timeEl) timeEl.textContent = formatTimeShort(Date.now() - entry.startTime);
+      const clientEl = win.document.getElementById('pip-client');
+      if (clientEl) {
+        const name = pipClientsRef.current.find(c => c.id === entry.clientId)?.name || '作業中';
+        clientEl.textContent = name;
       }
     };
 
@@ -3157,24 +3222,7 @@ const AppLayout: React.FC = () => {
     return () => clearInterval(interval);
   }, [isPiPActive, activeEntry]);
 
-  const handleTogglePiP = async () => {
-    // If already active, close PiP or notification
-    if (isPiPActive) {
-      if (pipWindowRef.current) {
-        pipWindowRef.current.close();
-        pipWindowRef.current = null;
-      }
-      if (notificationRef.current) {
-        notificationRef.current.close();
-        notificationRef.current = null;
-      }
-      if (notificationIntervalRef.current) {
-        clearInterval(notificationIntervalRef.current);
-        notificationIntervalRef.current = null;
-      }
-      setIsPiPActive(false);
-      return;
-    }
+  const openPiPWindow = async (startRunning: boolean, startPreviewIndex?: number) => {
 
     // If PiP not supported (mobile), use Notification API
     if (!('documentPictureInPicture' in window)) {
@@ -3209,10 +3257,12 @@ const AppLayout: React.FC = () => {
     }
 
     try {
-      const pipWindow = await (window as any).documentPictureInPicture.requestWindow({
-        width: 320,
-        height: 120,
-      });
+      const PIP_SMALL = { width: 280, height: 52 };
+      const PIP_LARGE = { width: 380, height: 116 };
+
+      const pipWindow = await (window as any).documentPictureInPicture.requestWindow(
+        startRunning ? PIP_SMALL : PIP_LARGE
+      );
 
       pipWindowRef.current = pipWindow;
 
@@ -3221,109 +3271,181 @@ const AppLayout: React.FC = () => {
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          background: #334155;
-          color: white;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          height: 100vh;
-          padding: 12px;
-          user-select: none;
+          background: #1e293b; color: white;
+          display: flex; flex-direction: column; justify-content: center;
+          height: 100vh; padding: 8px 10px;
+          user-select: none; gap: 6px; overflow: hidden;
         }
-        .container {
-          display: flex;
-          align-items: center;
-          gap: 16px;
-          width: 100%;
-        }
+        .row { display: flex; align-items: center; gap: 8px; width: 100%; }
         .indicator {
-          width: 10px;
-          height: 10px;
-          border-radius: 50%;
-          background: #ef4444;
-          animation: pulse 2s infinite;
-          box-shadow: 0 0 8px rgba(239,68,68,0.6);
-          flex-shrink: 0;
+          width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+          background: #ef4444; box-shadow: 0 0 6px rgba(239,68,68,0.6);
         }
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
-        }
-        .info {
-          flex: 1;
-          min-width: 0;
-          overflow: hidden;
-        }
-        .label {
-          font-size: 10px;
-          color: #94a3b8;
-          font-weight: bold;
-          margin-bottom: 2px;
-        }
+        .indicator.running { animation: pulse 2s infinite; }
+        .indicator.stopped { background: #64748b; box-shadow: none; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
         .client {
-          font-size: 14px;
-          font-weight: bold;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
+          font-size: 13px; font-weight: bold;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+          flex: 1; min-width: 0;
         }
+        .client.stopped { color: #94a3b8; }
         .time {
           font-family: ui-monospace, monospace;
-          font-size: 20px;
-          font-weight: bold;
-          color: #e2e8f0;
-          flex-shrink: 0;
+          font-size: 18px; font-weight: bold; color: #e2e8f0; flex-shrink: 0;
         }
+        .sep { color: #475569; font-size: 12px; flex-shrink: 0; }
+        .nav-btn {
+          background: #334155; border: 1px solid #475569; color: #94a3b8;
+          width: 22px; height: 22px; border-radius: 5px; font-size: 13px;
+          cursor: pointer; display: flex; align-items: center; justify-content: center;
+          flex-shrink: 0; transition: background 0.15s, color 0.15s;
+        }
+        .nav-btn:hover { background: #0f172a; color: white; }
+        .nav-btn:disabled { opacity: 0.25; cursor: default; }
+        .switch-name {
+          font-size: 11px; font-weight: bold; color: #94a3b8;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+          max-width: 72px; text-align: center;
+        }
+        .switch-name.active { color: #38bdf8; }
+        .go-btn {
+          background: #22c55e; border: none; color: white;
+          padding: 3px 10px; border-radius: 9999px; font-size: 11px;
+          font-weight: bold; cursor: pointer; flex-shrink: 0; transition: background 0.15s;
+        }
+        .go-btn:hover { background: #16a34a; }
+        .go-btn:disabled { background: #334155; color: #475569; cursor: default; }
         .stop-btn {
-          background: #1e293b;
-          border: 1px solid #475569;
-          color: white;
-          padding: 8px 16px;
-          border-radius: 9999px;
-          font-size: 12px;
-          font-weight: bold;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          transition: background 0.2s;
-          flex-shrink: 0;
+          background: #334155; border: 1px solid #475569; color: white;
+          padding: 4px 10px; border-radius: 9999px; font-size: 11px;
+          font-weight: bold; cursor: pointer; flex-shrink: 0;
+          display: flex; align-items: center; gap: 4px; transition: background 0.2s;
         }
         .stop-btn:hover { background: #0f172a; }
-        .stop-btn:active { transform: scale(0.95); }
-        .stop-icon {
-          width: 8px;
-          height: 8px;
-          background: currentColor;
+        .stop-btn:disabled { opacity: 0.3; cursor: default; }
+        .stop-icon { width: 7px; height: 7px; background: currentColor; border-radius: 1px; }
+        .desc-input {
+          flex: 1; background: #0f172a; border: 1px solid #334155; color: #e2e8f0;
+          border-radius: 6px; padding: 4px 8px; font-size: 11px;
+          outline: none; min-width: 0; user-select: text;
         }
+        .desc-input::placeholder { color: #475569; }
+        .desc-input:focus { border-color: #64748b; }
+        .desc-label { font-size: 10px; color: #475569; flex-shrink: 0; }
       `;
       pipWindow.document.head.appendChild(style);
 
+      const clients = pipClientsRef.current;
+      const currentEntry = pipActiveEntryRef.current;
+      const currentIdx = clients.findIndex(c => c.id === currentEntry?.clientId);
+      let previewIndex = startPreviewIndex !== undefined ? startPreviewIndex : (currentIdx >= 0 ? currentIdx : 0);
+      let isRunning = startRunning;
+
+      const buildPresetsDatalist = (clientIdx: number) => {
+        const presets = pipClientsRef.current[clientIdx]?.taskPresets || [];
+        return `<datalist id="pip-presets-list">${presets.map(p => `<option value="${p.replace(/"/g, '&quot;')}" />`).join('')}</datalist>`;
+      };
+
       pipWindow.document.body.innerHTML = `
-        <div class="container">
-          <div class="indicator"></div>
-          <div class="info">
-            <div class="label">計測中</div>
-            <div class="client">${activeClientName || '作業中'}</div>
-          </div>
-          <div class="time" id="pip-time">${formatTimeShort(floatingElapsed)}</div>
-          <button class="stop-btn" id="pip-stop">
-            <div class="stop-icon"></div>
-            停止
-          </button>
+        <div class="row">
+          <div class="indicator ${isRunning ? 'running' : 'stopped'}" id="pip-indicator"></div>
+          <div class="client${isRunning ? '' : ' stopped'}" id="pip-client">${clients[previewIndex]?.name || '作業中'}</div>
+          <div class="time" id="pip-time">${isRunning ? formatTimeShort(floatingElapsed) : '--:--'}</div>
+          <div class="sep">|</div>
+          <button class="nav-btn" id="pip-prev">&#8249;</button>
+          <span class="switch-name" id="pip-preview-name"></span>
+          <button class="nav-btn" id="pip-next">&#8250;</button>
+          <button class="go-btn" id="pip-switch">開始</button>
+          <div class="sep">|</div>
+          <button class="stop-btn" id="pip-stop"><div class="stop-icon"></div>停止</button>
+        </div>
+        <div class="row" id="pip-desc-row" style="display:${isRunning ? 'none' : 'flex'}">
+          <span class="desc-label">内容:</span>
+          ${buildPresetsDatalist(previewIndex)}
+          <input class="desc-input" id="pip-desc" type="text" list="pip-presets-list" placeholder="業務内容を入力（任意）" />
         </div>
       `;
 
-      const stopBtn = pipWindow.document.getElementById('pip-stop');
-      if (stopBtn) {
-        stopBtn.addEventListener('click', () => {
-          dispatch({ type: 'STOP_TIMER' });
-          pipWindow.close();
+      const updateUI = () => {
+        const doc = pipWindow.document;
+        const cls = pipClientsRef.current;
+        const nameEl = doc.getElementById('pip-preview-name');
+        const prevBtn = doc.getElementById('pip-prev') as HTMLButtonElement | null;
+        const nextBtn = doc.getElementById('pip-next') as HTMLButtonElement | null;
+        const goBtn = doc.getElementById('pip-switch') as HTMLButtonElement | null;
+        const stopBtn = doc.getElementById('pip-stop') as HTMLButtonElement | null;
+        const indicator = doc.getElementById('pip-indicator');
+        const clientEl = doc.getElementById('pip-client');
+        const descRow = doc.getElementById('pip-desc-row') as HTMLElement | null;
+        if (nameEl) {
+          nameEl.textContent = cls[previewIndex]?.name || '';
+          nameEl.className = 'switch-name' + (isRunning && cls[previewIndex]?.id === pipActiveEntryRef.current?.clientId ? ' active' : '');
+        }
+        if (prevBtn) prevBtn.disabled = previewIndex <= 0;
+        if (nextBtn) nextBtn.disabled = previewIndex >= cls.length - 1;
+        if (goBtn) goBtn.disabled = isRunning && cls[previewIndex]?.id === pipActiveEntryRef.current?.clientId;
+        if (stopBtn) stopBtn.disabled = !isRunning;
+        if (indicator) indicator.className = 'indicator ' + (isRunning ? 'running' : 'stopped');
+        if (clientEl) clientEl.className = 'client' + (isRunning ? '' : ' stopped');
+        // 計測中は入力欄を隠す、停止中は表示
+        if (descRow) descRow.style.display = isRunning ? 'none' : 'flex';
+        // プレビュークライアントのプリセット一覧を更新
+        const existingDatalist = doc.getElementById('pip-presets-list');
+        if (existingDatalist) {
+          const presets = pipClientsRef.current[previewIndex]?.taskPresets || [];
+          existingDatalist.innerHTML = presets.map(p => `<option value="${p.replace(/"/g, '&quot;')}" />`).join('');
+        }
+      };
+      updateUI();
+
+      pipWindow.document.getElementById('pip-prev')?.addEventListener('click', () => {
+        if (previewIndex > 0) { previewIndex--; updateUI(); }
+      });
+      pipWindow.document.getElementById('pip-next')?.addEventListener('click', () => {
+        if (previewIndex < pipClientsRef.current.length - 1) { previewIndex++; updateUI(); }
+      });
+      pipWindow.document.getElementById('pip-switch')?.addEventListener('click', () => {
+        const target = pipClientsRef.current[previewIndex];
+        if (!target) return;
+        if (isRunning && target.id === pipActiveEntryRef.current?.clientId) return;
+        const descInput = pipWindow.document.getElementById('pip-desc') as HTMLInputElement | null;
+        const desc = descInput?.value.trim() || '';
+        const targetIdx = pipClientsRef.current.findIndex(c => c.id === target.id);
+        // 開始: ウィンドウを閉じて小さいサイズで再オープン
+        pipSwitchingRef.current = true;
+        pipKeepOpenRef.current = true;
+        dispatch({ type: 'STOP_TIMER' });
+        dispatch({
+          type: 'START_TIMER',
+          payload: { clientId: target.id, description: desc, rateType: target.hourlyRate ? 'hourly' : 'fixed' }
         });
-      }
+        pipWindow.close();
+        setTimeout(() => {
+          pipSwitchingRef.current = false;
+          pipKeepOpenRef.current = false;
+          openPiPWindow(true, targetIdx >= 0 ? targetIdx : previewIndex);
+        }, 100);
+      });
+      pipWindow.document.getElementById('pip-stop')?.addEventListener('click', () => {
+        if (!isRunning) return;
+        // 停止: ウィンドウを閉じて大きいサイズで再オープン
+        pipKeepOpenRef.current = true;
+        dispatch({ type: 'STOP_TIMER' });
+        pipWindow.close();
+        setTimeout(() => {
+          pipKeepOpenRef.current = false;
+          openPiPWindow(false, previewIndex);
+        }, 100);
+      });
 
       pipWindow.addEventListener('pagehide', () => {
+        delete (window as any).__pipStop;
+        delete (window as any).__pipSwitch;
         pipWindowRef.current = null;
+        pipChannelRef.current = null;
+        pipKeepOpenRef.current = false;
+        pipSwitchingRef.current = false;
         setIsPiPActive(false);
       });
 
@@ -3331,6 +3453,14 @@ const AppLayout: React.FC = () => {
     } catch (error) {
       console.error('PiP error:', error);
       alert('ピクチャーインピクチャーの起動に失敗しました。');
+    }
+  };
+
+  const handleTogglePiP = () => {
+    if (isPiPActive && pipWindowRef.current) {
+      pipWindowRef.current.focus();
+    } else {
+      openPiPWindow(!!pipActiveEntryRef.current);
     }
   };
 
@@ -3574,7 +3704,7 @@ const AppLayout: React.FC = () => {
             <div className="hidden md:block h-8"></div>
             <main className="p-4 md:p-8 max-w-6xl w-full mx-auto pb-24 md:pb-8">
                 <Routes>
-                    <Route path="/" element={<Dashboard state={state} onStartTimer={(clientId, description, rateType, projectId, category) => dispatch({type:'START_TIMER', payload:{clientId, description, rateType, projectId, category}})} onStopTimer={() => dispatch({type:'STOP_TIMER'})} onUpdateDescription={(id, description) => { const entry = state.entries.find(e => e.id === id); if (entry) dispatch({type:'UPDATE_ENTRY', payload:{...entry, description}}); }} onDeletePreset={(clientId, presetName) => dispatch({type: 'DELETE_CLIENT_PRESET', payload: {clientId, presetName}})} onReorderClients={(clients) => dispatch({type: 'REORDER_CLIENTS', payload: clients})} />} />
+                    <Route path="/" element={<Dashboard state={state} user={user} onStartTimer={(clientId, description, rateType, projectId, category) => dispatch({type:'START_TIMER', payload:{clientId, description, rateType, projectId, category}})} onStopTimer={() => dispatch({type:'STOP_TIMER'})} onUpdateDescription={(id, description) => { const entry = state.entries.find(e => e.id === id); if (entry) dispatch({type:'UPDATE_ENTRY', payload:{...entry, description}}); }} onDeletePreset={(clientId, presetName) => dispatch({type: 'DELETE_CLIENT_PRESET', payload: {clientId, presetName}})} onReorderClients={(clients) => dispatch({type: 'REORDER_CLIENTS', payload: clients})} />} />
                     <Route path="/clients" element={<ManagementPage state={state} dispatch={dispatch} />} />
                     <Route path="/projects" element={<ProjectsPage state={state} dispatch={dispatch} />} />
                     <Route path="/logs" element={<LogsPage state={state} dispatch={dispatch} />} />

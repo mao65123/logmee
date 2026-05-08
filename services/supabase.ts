@@ -1,8 +1,12 @@
 import { createClient, Session, User } from '@supabase/supabase-js';
 import { Client, TimeEntry, UserSettings, MonthlyFixedFee, Project, Currency, SavedReport } from '../types';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://iefnonbwfronqhbqxnib.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllZm5vbmJ3ZnJvbnFoYnF4bmliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAxODg4NDYsImV4cCI6MjA4NTc2NDg0Nn0.q-mTqJkMmni_baUWYTvASybmylgLpfLnrFWYjC1xwuo';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set');
+}
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 

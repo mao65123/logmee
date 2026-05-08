@@ -23,5 +23,12 @@ dist-ssr
 *.sln
 *.sw?
 
+# Environment files
+.env
+.env.*
+
+# Claude Code settings (may contain tokens)
+.claude/settings.local.json
+
 # Local Netlify folder
 .netlify

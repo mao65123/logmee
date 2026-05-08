@@ -10,8 +10,13 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://iefnonbwfronqhbqxnib.supabase.co';
+const supabaseUrl = process.env.VITE_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+
+if (!supabaseUrl) {
+  console.error('VITE_SUPABASE_URL environment variable is required');
+  process.exit(1);
+}
 
 if (!supabaseServiceKey) {
   console.log(`
@@ -32,7 +37,7 @@ if (!supabaseServiceKey) {
 ║                                                                            ║
 ║  【方法2】Supabase CLI を使用                                              ║
 ║  1. supabase login                                                         ║
-║  2. supabase link --project-ref iefnonbwfronqhbqxnib                       ║
+║  2. supabase link --project-ref <your-project-ref>                         ║
 ║  3. supabase db push                                                       ║
 ║                                                                            ║
 ║  【方法3】このスクリプトを使用                                              ║

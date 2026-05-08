@@ -16,6 +16,7 @@ export interface Client {
   name: string;
   color: string; // Hex code for UI identification
   defaultHourlyRate?: number;
+  monthlyRate?: number;      // 月給（設定時は毎月自動加算）
 
   closingDate?: number; // 99 for End of Month, or 5, 10, 15, 20, 25...
   taskPresets: string[]; // Frequently used tasks specifically for this client
